@@ -1,0 +1,17 @@
+.DS_Store
+
+# Dependencies
+node_modules/
+
+# Electron build output
+dist/
+out/
+release/
+
+# Local/editor state
+.claude/settings.local.json
+
+# Runtime scratch
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

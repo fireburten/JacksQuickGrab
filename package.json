@@ -1,0 +1,39 @@
+{
+  "name": "jacks-quick-grab",
+  "version": "1.0.0",
+  "description": "Fast screenshot and annotation tool",
+  "main": "main.js",
+  "scripts": {
+    "start": "unset ELECTRON_RUN_AS_NODE && electron .",
+    "build": "electron-builder",
+    "build:dir": "electron-builder --dir",
+    "open:dist": "unset ELECTRON_RUN_AS_NODE && open -n \"$PWD/dist/mac-arm64/Jack's Quick Grab.app\"",
+    "rebuild:open": "npm run build:dir && npm run open:dist"
+  },
+  "devDependencies": {
+    "electron": "^41.3.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.jacksquickgrab.app",
+    "productName": "Jack's Quick Grab",
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "package.json",
+      "logo.png",
+      "src/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "icon": "logo.png",
+      "identity": null,
+      "extendInfo": {
+        "NSScreenCaptureUsageDescription": "Jack's Quick Grab needs to capture your screen to take screenshots."
+      }
+    },
+    "win": {
+      "icon": "logo.png"
+    }
+  }
+}

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: transparent;
+  font-family: 'Poppins', system-ui, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.hud {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+  background: rgba(27, 19, 53, 0.97);
+  border-radius: 18px;
+  padding: 8px 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.07);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.drag-handle {
+  padding: 0 8px 0 2px;
+  border-right: 1px solid rgba(255,255,255,.09);
+  margin-right: 4px;
+  display: flex;
+  align-items: center;
+  -webkit-app-region: drag;
+  cursor: -webkit-grab;
+}
+.drag-handle img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  pointer-events: none;
+  display: block;
+  background: #fff;
+  border-radius: 7px;
+  padding: 2px;
+}
+.mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(255,255,255,.05);
+  cursor: pointer;
+  min-width: 46px;
+  transition: background .15s;
+  -webkit-app-region: no-drag;
+  font-family: inherit;
+  color: inherit;
+}
+.mode-btn:hover:not(:disabled) { background: rgba(108,78,246,.25); }
+.mode-btn:disabled { opacity: 0.35; cursor: default; }
+.mode-btn .ic { font-size: 17px; line-height: 1; color: rgba(255,255,255,.6); }
+.mode-btn:hover:not(:disabled) .ic { color: #fff; }
+.mode-btn .lbl { font-size: 10px; font-weight: 500; color: rgba(255,255,255,.38); }
+.mode-btn:hover:not(:disabled) .lbl { color: rgba(255,255,255,.9); }
+.mode-btn.flash { background: #6C4EF6 !important; }
+.mode-btn.flash .ic, .mode-btn.flash .lbl { color: #fff !important; }
+.sep { width: 1px; height: 34px; background: rgba(255,255,255,.08); margin: 0 4px; flex-shrink: 0; }
+.hist-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  font-family: inherit;
+}
+.hist-btn .ic { font-size: 15px; color: rgba(255,255,255,.3); }
+.hist-btn .lbl { font-size: 10px; color: rgba(255,255,255,.22); }
+.hist-btn:hover .ic { color: rgba(255,255,255,.6); }
+.hist-btn:hover .lbl { color: rgba(255,255,255,.5); }
+</style>
+</head>
+<body>
+<div class="hud">
+  <div class="drag-handle">
+    <img src="../logo.png" alt="JQG">
+  </div>
+
+  <button class="mode-btn" data-mode="region" title="Capture Region (⌘⇧4)">
+    <span class="ic">⊹</span><span class="lbl">Region</span>
+  </button>
+  <button class="mode-btn" data-mode="window" title="Capture Window (⌘⇧W)">
+    <span class="ic">⬚</span><span class="lbl">Window</span>
+  </button>
+  <button class="mode-btn" data-mode="full" title="Full Screen (⌘⇧3)">
+    <span class="ic">⛶</span><span class="lbl">Full</span>
+  </button>
+  <button class="mode-btn" data-mode="scroll" title="Scrolling capture (coming soon)" disabled>
+    <span class="ic">↕</span><span class="lbl">Scroll</span>
+  </button>
+  <button class="mode-btn" data-mode="record" title="Record screen (coming soon)" disabled>
+    <span class="ic">⏺</span><span class="lbl">Record</span>
+  </button>
+  <button class="mode-btn" data-mode="gif" title="Record GIF (coming soon)" disabled>
+    <span class="ic">◑</span><span class="lbl">GIF</span>
+  </button>
+
+  <div class="sep"></div>
+
+  <button class="hist-btn" title="Capture history">
+    <span class="ic">▤</span><span class="lbl">History</span>
+  </button>
+</div>
+
+<script>
+document.querySelectorAll('.mode-btn:not(:disabled)').forEach(btn => {
+  btn.addEventListener('click', () => {
+    btn.classList.add('flash');
+    setTimeout(() => btn.classList.remove('flash'), 600);
+    if (window.electronAPI) window.electronAPI.hudCapture(btn.dataset.mode);
+  });
+});
+</script>
+</body>
+</html>

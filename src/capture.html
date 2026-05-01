@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+canvas { position: absolute; inset: 0; display: block; cursor: crosshair; }
+#hint {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(27,19,53,.92);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  padding: 8px 18px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  color: rgba(255,255,255,.6);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  letter-spacing: .01em;
+}
+kbd { color: #E9E7FB; font-family: inherit; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">Drag to select · <kbd>Space</kbd> full screen · <kbd>Esc</kbd> cancel</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const PURPLE    = '#6C4EF6';
+const PURPLE35  = 'rgba(108,78,246,.35)';
+const DARK      = 'rgba(14,10,31,.52)';
+
+let bgImage = null;
+let sel = null;
+let dragging = false;
+let sx = 0, sy = 0;
+
+function resize() {
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  draw();
+}
+
+function normalise(s) {
+  return {
+    x: s.w < 0 ? s.x + s.w : s.x,
+    y: s.h < 0 ? s.y + s.h : s.y,
+    w: Math.abs(s.w),
+    h: Math.abs(s.h),
+  };
+}
+
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  if (bgImage) ctx.drawImage(bgImage, 0, 0, W, H);
+
+  ctx.fillStyle = DARK;
+  ctx.fillRect(0, 0, W, H);
+
+  if (!sel || (Math.abs(sel.w) < 3 && Math.abs(sel.h) < 3)) return;
+
+  const { x, y, w, h } = normalise(sel);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = 'rgba(0,0,0,1)';
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+
+  if (bgImage) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.drawImage(bgImage, 0, 0, W, H);
+    ctx.restore();
+  }
+
+  ctx.strokeStyle = PURPLE;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+
+  ctx.fillStyle = PURPLE;
+  [[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([hx,hy]) => {
+    ctx.beginPath();
+    ctx.roundRect(hx-5, hy-5, 10, 10, 2);
+    ctx.fill();
+  });
+
+  const cx = x + w/2, cy = y + h/2;
+  ctx.setLineDash([4,4]);
+  ctx.strokeStyle = PURPLE35;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx, 0); ctx.lineTo(cx, y);
+  ctx.moveTo(cx, y+h); ctx.lineTo(cx, H);
+  ctx.moveTo(0, cy); ctx.lineTo(x, cy);
+  ctx.moveTo(x+w, cy); ctx.lineTo(W, cy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const badge = `${w} × ${h} px`;
+  ctx.font = '600 12px system-ui';
+  const bw = ctx.measureText(badge).width + 20;
+  const bx = Math.max(x, Math.min(x + w - bw, W - bw - 8));
+  const by = Math.min(y + h + 8, H - 30);
+  ctx.fillStyle = PURPLE;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, 22, 5);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillText(badge, bx + 10, by + 15);
+}
+
+canvas.addEventListener('mousedown', e => {
+  sx = e.clientX; sy = e.clientY;
+  dragging = true;
+  sel = { x: sx, y: sy, w: 0, h: 0 };
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  sel = { x: sx, y: sy, w: e.clientX - sx, h: e.clientY - sy };
+  draw();
+});
+
+canvas.addEventListener('mouseup', () => {
+  if (!dragging) return;
+  dragging = false;
+
+  const { x, y, w, h } = normalise(sel);
+  if (w < 8 || h < 8) { sel = null; draw(); return; }
+
+  // Scale logical coords to physical pixels (Retina-safe crop)
+  const scaleX = bgImage ? bgImage.naturalWidth  / canvas.width  : 1;
+  const scaleY = bgImage ? bgImage.naturalHeight / canvas.height : 1;
+  const px = Math.round(x * scaleX);
+  const py = Math.round(y * scaleY);
+  const pw = Math.round(w * scaleX);
+  const ph = Math.round(h * scaleY);
+
+  const off = document.createElement('canvas');
+  off.width = pw; off.height = ph;
+  const oc = off.getContext('2d');
+  if (bgImage) oc.drawImage(bgImage, -px, -py, bgImage.naturalWidth, bgImage.naturalHeight);
+  const dataURL = off.toDataURL('image/png');
+
+  if (window.electronAPI) {
+    window.electronAPI.captureDone({ imageDataURL: dataURL, rect: { x: px, y: py, w: pw, h: ph } });
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (window.electronAPI) window.electronAPI.captureCancel();
+  }
+  if (e.key === ' ' && bgImage) {
+    e.preventDefault();
+    const off = document.createElement('canvas');
+    off.width = bgImage.naturalWidth; off.height = bgImage.naturalHeight;
+    off.getContext('2d').drawImage(bgImage, 0, 0);
+    if (window.electronAPI) {
+      window.electronAPI.captureDone({ imageDataURL: off.toDataURL(), rect: null });
+    }
+  }
+});
+
+window.addEventListener('resize', resize);
+
+if (window.electronAPI) {
+  window.electronAPI.onScreenImage(dataURL => {
+    const img = new Image();
+    img.onload = () => { bgImage = img; draw(); };
+    img.src = dataURL;
+  });
+}
+
+resize();
+</script>
+</body>
+</html>

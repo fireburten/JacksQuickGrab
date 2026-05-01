@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jack's Quick Grab — Hi-Fi Prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0e0a1f; font-family: 'Poppins', sans-serif; overflow: hidden; height: 100vh; }
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(108,78,246,.5); }
+  70% { box-shadow: 0 0 0 10px rgba(108,78,246,0); }
+  100% { box-shadow: 0 0 0 0 rgba(108,78,246,0); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes flash-in {
+  0% { opacity:0; transform:scale(.96); }
+  100% { opacity:1; transform:scale(1); }
+}
+@keyframes slide-up {
+  0% { opacity:0; transform:translateX(-50%) translateY(14px); }
+  100% { opacity:1; transform:translateX(-50%) translateY(0); }
+}
+@keyframes pop-in {
+  0% { opacity:0; transform:translate(-50%,-50%) scale(.92); }
+  100% { opacity:1; transform:translate(-50%,-50%) scale(1); }
+}
+
+.fade-in { animation: flash-in .22s ease both; }
+.slide-up { animation: slide-up .25s ease both; }
+.pop-in { animation: pop-in .22s cubic-bezier(.34,1.56,.64,1) both; }
+
+.crosshatch {
+  background-image: repeating-linear-gradient(45deg,#b8b0d8,#b8b0d8 1px,transparent 1px,transparent 10px);
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const { useState, useRef, useEffect } = React;
+
+const C = {
+  purple: '#6C4EF6',
+  purpleDk: '#5038d4',
+  navy: '#1B1335',
+  navyLight: '#2a1f4e',
+  green: '#22C55E',
+  lavender: '#E9E7FB',
+  offwhite: '#F5F5F7',
+  pA: 'rgba(108,78,246,.14)',
+  pB: 'rgba(108,78,246,.28)',
+  gA: 'rgba(34,197,94,.15)'
+};
+
+/* ── Fake desktop content ── */
+function Desktop({ dim }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: '#dfe3f0', transition: 'filter .3s', filter: dim ? 'brightness(.55)' : 'none' }}>
+      {/* Menu bar */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 26, background: 'rgba(27,19,53,.95)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16, zIndex: 1 }}>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {['#ff6b6b', '#ffd93d', '#6bcb77'].map((c, i) => <div key={i} style={{ width: 11, height: 11, borderRadius: '50%', background: c }} />)}
+        </div>
+        <span style={{ fontFamily: 'Poppins', fontSize: 11, color: 'rgba(255,255,255,.35)', flex: 1, textAlign: 'center' }}>Figma — Component Library</span>
+        <span style={{ fontFamily: 'Poppins', fontSize: 11, color: 'rgba(255,255,255,.3)' }}>11:42</span>
+      </div>
+
+      {/* Main window */}
+      <div style={{ position: 'absolute', top: 34, left: 70, right: 70, bottom: 36, background: '#fff', borderRadius: '10px 10px 0 0', border: '1px solid rgba(0,0,0,.1)', boxShadow: '0 4px 30px rgba(0,0,0,.15)', overflow: 'hidden' }}>
+        {/* Browser chrome */}
+        <div style={{ height: 38, background: '#f2f0f8', borderBottom: '1px solid #e0ddf5', display: 'flex', alignItems: 'center', padding: '0 12px', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 5 }}>
+            {['#ff6b6b', '#ffd93d', '#6bcb77'].map((c, i) => <div key={i} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />)}
+          </div>
+          <div style={{ flex: 1, background: '#fff', borderRadius: 7, height: 24, border: '1px solid #ddd', display: 'flex', alignItems: 'center', padding: '0 10px', gap: 6 }}>
+            <span style={{ fontSize: 11, color: '#bbb' }}>🔒</span>
+            <span style={{ fontFamily: 'Poppins', fontSize: 11, color: '#888' }}>app.figma.com / Component Library</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['Share', 'Present'].map((l) => <div key={l} style={{ fontFamily: 'Poppins', fontSize: 11, padding: '3px 10px', borderRadius: 6, background: l === 'Present' ? C.purple : 'transparent', color: l === 'Present' ? '#fff' : '#888', border: '1px solid ' + (l === 'Present' ? C.purple : '#ddd') }}>{l}</div>)}
+          </div>
+        </div>
+        {/* App content */}
+        <div style={{ display: 'flex', height: 'calc(100% - 38px)' }}>
+          {/* Sidebar */}
+          <div style={{ width: 220, borderRight: '1px solid #f0eef8', background: '#faf9fd', padding: '14px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {[['Pages', true], ['Layers', false], ['Assets', false]].map(([l, a]) =>
+            <div key={l} style={{ padding: '8px 18px', fontFamily: 'Poppins', fontSize: 12, fontWeight: a ? 600 : 400, color: a ? C.purple : '#888', background: a ? C.pA : 'transparent', borderLeft: a ? `3px solid ${C.purple}` : '3px solid transparent' }}>{l}</div>
+            )}
+            <div style={{ height: 1, background: '#f0eef8', margin: '8px 0' }} />
+            {['Button', 'Card', 'Input', 'Modal', 'Nav'].map((l) =>
+            <div key={l} style={{ padding: '6px 18px', fontFamily: 'Poppins', fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 16, height: 16, background: C.lavender, borderRadius: 3 }} />
+                {l}
+              </div>
+            )}
+          </div>
+          {/* Canvas */}
+          <div style={{ flex: 1, background: '#e8e6f0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 20 }}>
+            {[['Primary', '#6C4EF6', '#fff'], ['Secondary', '#E9E7FB', C.purple], ['Danger', '#FEE2E2', '#DC2626']].map(([v, bg, fc]) =>
+            <div key={v} style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 2px 12px rgba(0,0,0,.08)', display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', width: 160 }}>
+                <div style={{ fontFamily: 'Poppins', fontSize: 11, color: '#888', fontWeight: 600 }}>{v}</div>
+                <div style={{ background: bg, color: fc, borderRadius: 8, padding: '8px 20px', fontFamily: 'Poppins', fontSize: 13, fontWeight: 600 }}>Button</div>
+                <div style={{ background: bg, color: fc, borderRadius: 8, padding: '5px 14px', fontFamily: 'Poppins', fontSize: 11, border: `1.5px solid ${bg === '#fff' ? '#eee' : bg}` }}>Ghost</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Taskbar */}
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 36, background: 'rgba(27,19,53,.9)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 8 }}>
+        {['📁', '🌐', '💬', '📧'].map((ic, i) => <div key={i} style={{ width: 24, height: 24, borderRadius: 5, background: 'rgba(255,255,255,.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>{ic}</div>)}
+      </div>
+    </div>);
+
+}
+
+/* ── Logo mark ── */
+function LogoMark({ size = 28 }) {
+  return (
+    <img src="assets/logo.png" style={{ ...{ width: size, height: size, imageRendering: 'crisp-edges', opacity: "2", objectFit: "fill" }, width: "50px", height: "50px" }} alt="Jack's Quick Grab" />);
+
+}
+
+/* ── Floating HUD ── */
+function HUD({ onCapture, pos, setPos }) {
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef(null);
+  const [activeMode, setActiveMode] = useState(null);
+
+  const onDown = (e) => {
+    dragRef.current = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y };
+    setDragging(true);
+    e.preventDefault();
+  };
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e) => {
+      if (!dragRef.current) return;
+      setPos({ x: dragRef.current.px + e.clientX - dragRef.current.mx, y: dragRef.current.py + e.clientY - dragRef.current.my });
+    };
+    const up = () => setDragging(false);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {window.removeEventListener('mousemove', move);window.removeEventListener('mouseup', up);};
+  }, [dragging]);
+
+  const modes = [
+  { id: 'region', ic: '⊹', label: 'Region' },
+  { id: 'window', ic: '⬚', label: 'Window' },
+  { id: 'full', ic: '⛶', label: 'Full' },
+  { id: 'scroll', ic: '↕', label: 'Scroll' },
+  { id: 'record', ic: '⏺', label: 'Record' },
+  { id: 'gif', ic: '◑', label: 'GIF' }];
+
+
+  return (
+    <div style={{
+      position: 'absolute', left: pos.x, top: pos.y, zIndex: 200,
+
+      borderRadius: 18,
+      padding: '10px 12px',
+      display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 4,
+      boxShadow: '0 8px 32px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.07)',
+      backdropFilter: 'blur(16px)',
+      cursor: dragging ? 'grabbing' : 'default',
+      userSelect: 'none', background: "rgba(27, 19, 53, 0.97)"
+    }}>
+      {/* Logo + drag */}
+      <div onMouseDown={onDown} style={{ padding: '0 6px 0 2px', cursor: 'grab', display: 'flex', alignItems: 'center', gap: 6, borderRight: '1px solid rgba(255,255,255,.08)', marginRight: 4 }}>
+        <LogoMark size={26} />
+      </div>
+
+      {/* Mode buttons */}
+      {modes.map((m) =>
+      <button key={m.id}
+      onClick={() => {setActiveMode(m.id);if (m.id === 'region') onCapture();}}
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+        padding: '6px 10px', borderRadius: 12, border: 'none',
+        background: activeMode === m.id ? C.purple : 'rgba(255,255,255,.05)',
+        cursor: 'pointer', minWidth: 46,
+        transition: 'background .15s, transform .1s'
+      }}>
+          <span style={{ fontSize: 17, lineHeight: 1, color: activeMode === m.id ? '#fff' : '#aaa' }}>{m.ic}</span>
+          <span style={{ fontFamily: 'Poppins', fontSize: 10, fontWeight: 500, color: activeMode === m.id ? 'rgba(255,255,255,.9)' : 'rgba(255,255,255,.4)' }}>{m.label}</span>
+        </button>
+      )}
+
+      <div style={{ width: 1, height: 34, background: 'rgba(255,255,255,.08)', margin: '0 4px' }} />
+
+      {/* History */}
+      <button style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '6px 8px', borderRadius: 12, border: 'none', background: 'transparent', cursor: 'pointer' }}>
+        <span style={{ fontSize: 15, color: 'rgba(255,255,255,.35)' }}>▤</span>
+        <span style={{ fontFamily: 'Poppins', fontSize: 10, color: 'rgba(255,255,255,.25)' }}>History</span>
+      </button>
+    </div>);
+
+}
+
+/* ── Selection overlay ── */
+function SelectionOverlay({ onConfirm }) {
+  const sel = { x: 160, y: 120, w: 380, h: 220 };
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 150, cursor: 'crosshair' }} onClick={onConfirm}>
+      {/* Dark vignette */}
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,10,31,.5)' }} />
+      {/* Selection hole */}
+      <div style={{
+        position: 'absolute', left: sel.x, top: sel.y, width: sel.w, height: sel.h,
+        boxShadow: `0 0 0 9999px rgba(14,10,31,.5)`,
+        border: `2px solid ${C.purple}`,
+        borderRadius: 4
+      }}>
+        {/* Corner handles */}
+        {[[0, 0], [sel.w, 0], [0, sel.h], [sel.w, sel.h]].map(([cx, cy], i) =>
+        <div key={i} style={{ position: 'absolute', left: cx, top: cy, width: 10, height: 10, background: C.purple, borderRadius: 2, transform: 'translate(-50%,-50%)', boxShadow: `0 0 0 2px rgba(108,78,246,.3)` }} />
+        )}
+        {/* Size badge */}
+        <div style={{ position: 'absolute', bottom: -32, right: 0, background: C.purple, color: '#fff', borderRadius: 6, padding: '3px 10px', fontFamily: 'Poppins', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
+          {sel.w} × {sel.h} px
+        </div>
+        {/* Snap label */}
+        <div style={{ position: 'absolute', top: -30, left: 0, background: 'rgba(27,19,53,.9)', color: C.green, borderRadius: 6, padding: '3px 10px', fontFamily: 'Poppins', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', border: `1px solid ${C.green}`, display: 'flex', gap: 5, alignItems: 'center' }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, animation: 'pulse-ring 1.5s infinite' }} />
+          Browser window snapped
+        </div>
+      </div>
+      {/* Crosshair guides */}
+      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+        <line x1={sel.x + sel.w / 2} y1="0" x2={sel.x + sel.w / 2} y2={sel.y} stroke="rgba(108,78,246,.35)" strokeWidth="1" strokeDasharray="4,4" />
+        <line x1={sel.x + sel.w / 2} y1={sel.y + sel.h} x2={sel.x + sel.w / 2} y2="100%" stroke="rgba(108,78,246,.35)" strokeWidth="1" strokeDasharray="4,4" />
+        <line x1="0" y1={sel.y + sel.h / 2} x2={sel.x} y2={sel.y + sel.h / 2} stroke="rgba(108,78,246,.35)" strokeWidth="1" strokeDasharray="4,4" />
+        <line x1={sel.x + sel.w} y1={sel.y + sel.h / 2} x2="100%" y2={sel.y + sel.h / 2} stroke="rgba(108,78,246,.35)" strokeWidth="1" strokeDasharray="4,4" />
+      </svg>
+
+      <div style={{ position: 'absolute', bottom: 30, left: '50%', transform: 'translateX(-50%)', background: 'rgba(27,19,53,.9)', borderRadius: 10, padding: '8px 18px', fontFamily: 'Poppins', fontSize: 12, color: 'rgba(255,255,255,.6)', whiteSpace: 'nowrap', border: '1px solid rgba(255,255,255,.08)' }}>
+        Click to capture · <span style={{ color: C.lavender }}>Tab</span> to switch mode · <span style={{ color: C.lavender }}>Esc</span> to cancel
+      </div>
+    </div>);
+
+}
+
+/* ── Annotation Editor ── */
+function AnnotationEditor({ onShare, onDone }) {
+  const [tool, setTool] = useState('arrow');
+  const [color, setColor] = useState(C.purple);
+  const [showStamps, setShowStamps] = useState(false);
+
+  const tools = [
+  { id: 'arrow', ic: '↗', tip: 'Arrow' },
+  { id: 'text', ic: 'T', tip: 'Text' },
+  { id: 'box', ic: '▭', tip: 'Box' },
+  { id: 'highlight', ic: '▬', tip: 'Highlight' },
+  { id: 'blur', ic: '≋', tip: 'Blur / Redact' },
+  { id: 'draw', ic: '✏', tip: 'Draw' },
+  { id: 'stamp', ic: '⊕', tip: 'Stamps' },
+  { id: 'measure', ic: '⟷', tip: 'Measure' },
+  { id: 'wand', ic: '✦', tip: 'BG Remove', ai: true }];
+
+
+  const colors = [C.purple, '#EF4444', '#F59E0B', C.green, '#3B82F6', '#EC4899', '#fff', '#1B1335'];
+
+  const stamps = ['①', '②', '③', '④', '🐛', '⚠', '✓', '💡', '→', '★', '❗', '📌'];
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 160 }}>
+      {/* Dark overlay */}
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,10,31,.7)', backdropFilter: 'blur(3px)' }} />
+
+      {/* Screenshot frame */}
+      <div className="pop-in" style={{
+        position: 'absolute', left: '50%', top: '44%',
+        transform: 'translate(-50%,-50%)',
+        width: 580, height: 340,
+        background: '#fff',
+        borderRadius: 10,
+        overflow: 'hidden',
+        boxShadow: '0 20px 80px rgba(0,0,0,.7), 0 0 0 1.5px rgba(255,255,255,.12)'
+      }}>
+        {/* Fake figma excerpt */}
+        <div style={{ display: 'flex', height: '100%' }}>
+          <div style={{ width: 170, borderRight: '1px solid #f0eef8', background: '#faf9fd', padding: '10px 0' }}>
+            {['Pages', 'Layers', 'Assets'].map((l, i) =>
+            <div key={l} style={{ padding: '7px 16px', fontFamily: 'Poppins', fontSize: 11, fontWeight: i === 0 ? 600 : 400, color: i === 0 ? C.purple : '#888', background: i === 0 ? C.pA : 'transparent', borderLeft: i === 0 ? `3px solid ${C.purple}` : '3px solid transparent' }}>{l}</div>
+            )}
+            <div style={{ height: 1, background: '#f0eef8', margin: '8px 0' }} />
+            {['Button', 'Card', 'Input', 'Modal'].map((l) =>
+            <div key={l} style={{ padding: '5px 16px', fontFamily: 'Poppins', fontSize: 11, color: '#888', display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ width: 14, height: 14, background: C.lavender, borderRadius: 2 }} />
+                {l}
+              </div>
+            )}
+          </div>
+          <div style={{ flex: 1, background: '#e8e6f0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 16 }}>
+            {[['Primary', C.purple, '#fff'], ['Secondary', C.lavender, C.purple]].map(([v, bg, fc]) =>
+            <div key={v} style={{ background: '#fff', borderRadius: 10, padding: 18, boxShadow: '0 2px 12px rgba(0,0,0,.08)', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', width: 140 }}>
+                <div style={{ fontFamily: 'Poppins', fontSize: 10, color: '#888', fontWeight: 600 }}>{v}</div>
+                <div style={{ background: bg, color: fc, borderRadius: 7, padding: '7px 18px', fontFamily: 'Poppins', fontSize: 12, fontWeight: 600 }}> Button</div>
+                <div style={{ background: bg, color: fc, borderRadius: 7, padding: '4px 12px', fontFamily: 'Poppins', fontSize: 10, border: `1.5px solid ${bg === '#fff' ? '#eee' : bg}` }}>Ghost</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Annotation layer */}
+        <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' }}>
+          <defs>
+            <marker id="ah3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill={C.purple} />
+            </marker>
+          </defs>
+          {/* Red box */}
+          <rect x="12" y="58" width="156" height="105" rx="4" fill="rgba(239,68,68,.08)" stroke="#EF4444" strokeWidth="2.5" />
+          {/* Arrow */}
+          <line x1="320" y1="95" x2="270" y2="75" stroke={C.purple} strokeWidth="2.5" markerEnd="url(#ah3)" />
+          {/* Highlight */}
+          <rect x="178" y="195" width="120" height="14" rx="3" fill="rgba(245,158,11,.5)" />
+        </svg>
+        {/* Text annotations */}
+        <div style={{ position: 'absolute', top: 38, left: 172, background: C.purple, color: '#fff', borderRadius: 6, padding: '3px 9px', fontFamily: 'Poppins', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(108,78,246,.4)' }}>
+          Needs contrast fix
+        </div>
+        <div style={{ position: 'absolute', top: 72, right: 14, background: 'rgba(27,19,53,.9)', color: '#fff', borderRadius: 6, padding: '3px 9px', fontFamily: 'Poppins', fontSize: 11, fontWeight: 600 }}>
+          Step 1 →
+        </div>
+      </div>
+
+      {/* ── Tool strip ── */}
+      <div className="slide-up" style={{
+        position: 'absolute', left: '50%', bottom: 72,
+        transform: 'translateX(-50%)',
+        background: 'rgba(14,10,31,.97)',
+        borderRadius: 20, padding: '8px 14px',
+        display: 'flex', alignItems: 'center', gap: 6,
+        boxShadow: '0 8px 40px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.06)',
+        backdropFilter: 'blur(12px)',
+        zIndex: 170
+      }}>
+        {/* Logo badge */}
+        <div style={{ marginRight: 6, paddingRight: 10, borderRight: '1px solid rgba(255,255,255,.08)', display: 'flex', alignItems: 'center' }}>
+          <LogoMark size={22} />
+        </div>
+
+        {/* Tools */}
+        {tools.map((t) =>
+        <div key={t.id} onClick={() => {setTool(t.id);if (t.id === 'stamp') setShowStamps((s) => !s);}} title={t.tip}
+        style={{
+          position: 'relative',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+          padding: '6px 9px', borderRadius: 12, cursor: 'pointer',
+          background: tool === t.id ? C.purple : 'rgba(255,255,255,.05)',
+          border: tool === t.id ? 'none' : '1px solid transparent',
+          transition: 'background .12s',
+          minWidth: 40
+        }}>
+            <span style={{ fontSize: 16, lineHeight: 1, color: tool === t.id ? '#fff' : 'rgba(255,255,255,.55)' }}>{t.ic}</span>
+            <span style={{ fontFamily: 'Poppins', fontSize: 9, fontWeight: 500, color: tool === t.id ? 'rgba(255,255,255,.9)' : 'rgba(255,255,255,.3)' }}>{t.tip}</span>
+            {t.ai && <div style={{ position: 'absolute', top: 2, right: 2, background: C.green, color: '#fff', fontSize: 7, padding: '0 3px', borderRadius: 3, fontWeight: 700 }}>AI</div>}
+          </div>
+        )}
+
+        <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,.08)', margin: '0 2px' }} />
+
+        {/* Color swatches */}
+        <div style={{ display: 'flex', gap: 4, padding: '0 4px' }}>
+          {colors.map((c) =>
+          <div key={c} onClick={() => setColor(c)} style={{ width: 18, height: 18, borderRadius: 5, background: c, cursor: 'pointer', border: color === c ? `2.5px solid #fff` : '2px solid rgba(255,255,255,.1)', transition: 'transform .1s', transform: color === c ? 'scale(1.15)' : 'scale(1)' }} />
+          )}
+        </div>
+
+        <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,.08)', margin: '0 2px' }} />
+
+        {/* Actions */}
+        <button onClick={() => {}} style={{ fontFamily: 'Poppins', fontSize: 12, fontWeight: 500, padding: '6px 12px', borderRadius: 12, background: 'rgba(255,255,255,.07)', color: 'rgba(255,255,255,.5)', border: 'none', cursor: 'pointer' }}>↩</button>
+        <button onClick={onShare} style={{ fontFamily: 'Poppins', fontSize: 12, fontWeight: 600, padding: '6px 16px', borderRadius: 12, background: C.green, color: '#fff', border: 'none', cursor: 'pointer', boxShadow: `0 3px 12px rgba(34,197,94,.35)` }}>⬆ Share</button>
+        <button onClick={onDone} style={{ fontFamily: 'Poppins', fontSize: 12, fontWeight: 600, padding: '6px 16px', borderRadius: 12, background: C.purple, color: '#fff', border: 'none', cursor: 'pointer', boxShadow: `0 3px 12px rgba(108,78,246,.35)` }}>✓ Done</button>
+      </div>
+
+      {/* Stamps popover */}
+      {showStamps && tool === 'stamp' &&
+      <div className="fade-in" style={{
+        position: 'absolute', left: '50%', bottom: 155,
+        transform: 'translateX(-50%)',
+        background: 'rgba(14,10,31,.97)',
+        borderRadius: 16, padding: '14px 16px',
+        boxShadow: '0 8px 32px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.06)',
+        zIndex: 171
+      }}>
+          <div style={{ fontFamily: 'Poppins', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.4)', marginBottom: 10, letterSpacing: .5 }}>STAMPS</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 7 }}>
+            {stamps.map((s, i) =>
+          <div key={i} style={{ width: 38, height: 38, borderRadius: 9, background: i === 0 ? C.purple : 'rgba(255,255,255,.07)', border: `1px solid rgba(255,255,255,.1)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, cursor: 'pointer' }}>{s}</div>
+          )}
+          </div>
+        </div>
+      }
+
+      {/* Properties pill */}
+      <div style={{
+        position: 'absolute', left: '50%', bottom: 142,
+        transform: 'translateX(-50%)',
+        background: 'rgba(14,10,31,.85)',
+        borderRadius: 10, padding: '5px 14px',
+        display: 'flex', gap: 12, alignItems: 'center',
+        fontFamily: 'Poppins', fontSize: 11, color: 'rgba(255,255,255,.5)',
+        border: '1px solid rgba(255,255,255,.05)',
+        zIndex: 168
+      }}>
+        <span>Stroke: <strong style={{ color: '#fff' }}>3px</strong></span>
+        <span>Opacity: <strong style={{ color: '#fff' }}>100%</strong></span>
+        <span style={{ color: 'rgba(255,255,255,.2)' }}>|</span>
+        <span>{tool.charAt(0).toUpperCase() + tool.slice(1)} selected</span>
+      </div>
+    </div>);
+
+}
+
+/* ── Share panel ── */
+function SharePanel({ onClose }) {
+  const options = [
+  { ic: '📋', label: 'Copy to clipboard', sub: 'Paste anywhere instantly', color: C.lavender, action: 'Copied!' },
+  { ic: '🔗', label: 'Copy share link', sub: 'Upload + shareable URL', color: '#dff0d8', action: 'Link copied!' },
+  { ic: '💬', label: 'Send to Slack', sub: 'Post to a channel or DM', color: '#ffeeba', action: 'Sent!' },
+  { ic: '📧', label: 'Email', sub: 'Attach and open mail', color: '#ffd0cc', action: 'Opening…' },
+  { ic: '📁', label: 'Save to folder', sub: 'PNG · WebP · PDF', color: '#e0d4ff', action: 'Saved!' },
+  { ic: '🎨', label: 'Open in Figma', sub: 'Import as layer', color: C.lavender, action: 'Opening…' }];
+
+  const [clicked, setClicked] = useState(null);
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 190, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,10,31,.75)', backdropFilter: 'blur(4px)' }} onClick={onClose} />
+      <div className="pop-in" style={{
+        position: 'relative',
+        background: 'rgba(20,14,40,.98)',
+        borderRadius: 20, padding: '28px 28px 22px',
+        width: 500,
+        boxShadow: '0 20px 80px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.08)',
+        zIndex: 191
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
+          <LogoMark size={32} />
+          <div>
+            <div style={{ fontFamily: 'Poppins', fontSize: 17, fontWeight: 700, color: '#fff' }}>Share your grab</div>
+            <div style={{ fontFamily: 'Poppins', fontSize: 12, color: 'rgba(255,255,255,.4)' }}>screenshot_2026-04-30_11-42.png · 580×340</div>
+          </div>
+          <button onClick={onClose} style={{ marginLeft: 'auto', background: 'rgba(255,255,255,.08)', border: 'none', borderRadius: 8, width: 32, height: 32, color: 'rgba(255,255,255,.5)', fontSize: 16, cursor: 'pointer' }}>✕</button>
+        </div>
+
+        {/* Options grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {options.map((o, i) =>
+          <div key={i} onClick={() => {setClicked(i);setTimeout(onClose, 900);}}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
+            background: clicked === i ? C.purple : 'rgba(255,255,255,.05)',
+            border: `1px solid ${clicked === i ? C.purple : 'rgba(255,255,255,.08)'}`,
+            transition: 'background .15s, border .15s'
+          }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: clicked === i ? 'rgba(255,255,255,.2)' : o.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0, transition: 'background .15s' }}>{o.ic}</div>
+              <div>
+                <div style={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 600, color: clicked === i ? '#fff' : 'rgba(255,255,255,.85)' }}>{clicked === i ? o.action : o.label}</div>
+                <div style={{ fontFamily: 'Poppins', fontSize: 11, color: 'rgba(255,255,255,.35)' }}>{o.sub}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ marginTop: 18, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ flex: 1, background: 'rgba(255,255,255,.05)', borderRadius: 10, padding: '8px 12px', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 13 }}>🔗</span>
+            <span style={{ fontFamily: 'Poppins', fontSize: 11, color: 'rgba(255,255,255,.3)' }}>grb.app/s/xk9f2…</span>
+            <button style={{ marginLeft: 'auto', background: C.purple, color: '#fff', border: 'none', borderRadius: 6, padding: '3px 10px', fontFamily: 'Poppins', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>);
+
+}
+
+/* ── Step nav ── */
+const STEPS = ['Idle', 'Aiming', 'Captured', 'Annotating', 'Sharing'];
+
+function StepNav({ step, setStep }) {
+  return (
+    <div style={{
+      position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+      display: 'flex', gap: 8, alignItems: 'center',
+      background: 'rgba(14,10,31,.92)',
+      borderRadius: 40, padding: '7px 16px',
+      boxShadow: '0 4px 20px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.06)',
+      zIndex: 300
+    }}>
+      {step > 0 &&
+      <button onClick={() => setStep((s) => Math.max(0, s - 1))} style={{ fontFamily: 'Poppins', fontSize: 12, color: 'rgba(255,255,255,.4)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 8px' }}>← back</button>
+      }
+      {STEPS.map((s, i) =>
+      <div key={i} onClick={() => setStep(i)} title={s} style={{
+        width: i === step ? 32 : 8, height: 8, borderRadius: 8,
+        background: i === step ? C.purple : i < step ? 'rgba(108,78,246,.4)' : 'rgba(255,255,255,.15)',
+        cursor: 'pointer', transition: 'width .25s, background .2s'
+      }} />
+      )}
+      <span style={{ fontFamily: 'Poppins', fontSize: 11, color: 'rgba(255,255,255,.4)', marginLeft: 4, width: 70 }}>{STEPS[step]}</span>
+      {step < STEPS.length - 1 && step !== 1 && step !== 3 &&
+      <button onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))} style={{ fontFamily: 'Poppins', fontSize: 12, color: C.purple, background: 'rgba(108,78,246,.12)', border: `1px solid rgba(108,78,246,.3)`, borderRadius: 20, cursor: 'pointer', padding: '3px 12px' }}>next →</button>
+      }
+    </div>);
+
+}
+
+/* ── Main App ── */
+function App() {
+  const [step, setStep] = useState(0);
+  const [hudPos, setHudPos] = useState({ x: 90, y: 70 });
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
+      {/* Desktop */}
+      <Desktop dim={step >= 1} />
+
+      {/* HUD — only visible when idle */}
+      {step === 0 &&
+      <HUD
+        onCapture={() => setStep(1)}
+        pos={hudPos}
+        setPos={setHudPos} />
+
+      }
+
+      {/* Selection overlay */}
+      {step === 1 && <SelectionOverlay onConfirm={() => setStep(2)} />}
+
+      {/* Capture flash */}
+      {step === 2 &&
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(108,78,246,.15)', zIndex: 140, pointerEvents: 'none' }} className="fade-in" />
+      }
+      {step === 2 &&
+      <div style={{ position: 'absolute', inset: 0, zIndex: 145, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+          <div className="fade-in" style={{ background: 'rgba(14,10,31,.9)', borderRadius: 16, padding: '16px 28px', display: 'flex', gap: 12, alignItems: 'center', boxShadow: '0 8px 32px rgba(0,0,0,.5)' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: C.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>✓</div>
+            <div>
+              <div style={{ fontFamily: 'Poppins', fontSize: 14, fontWeight: 700, color: '#fff' }}>Captured!</div>
+              <div style={{ fontFamily: 'Poppins', fontSize: 11, color: 'rgba(255,255,255,.4)' }}>580 × 340 · Click to annotate</div>
+            </div>
+          </div>
+          <div style={{ position: 'absolute', bottom: 70, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 10, zIndex: 146 }}>
+            <button onClick={() => setStep(3)} style={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 600, padding: '9px 22px', borderRadius: 12, background: C.purple, color: '#fff', border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px rgba(108,78,246,.4)` }}>✏ Annotate</button>
+            <button onClick={() => setStep(4)} style={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 600, padding: '9px 22px', borderRadius: 12, background: C.green, color: '#fff', border: 'none', cursor: 'pointer', boxShadow: `0 4px 16px rgba(34,197,94,.3)` }}>⬆ Share now</button>
+            <button onClick={() => setStep(0)} style={{ fontFamily: 'Poppins', fontSize: 13, fontWeight: 500, padding: '9px 22px', borderRadius: 12, background: 'rgba(255,255,255,.08)', color: 'rgba(255,255,255,.6)', border: '1px solid rgba(255,255,255,.1)', cursor: 'pointer' }}>📋 Copy & close</button>
+          </div>
+        </div>
+      }
+
+      {/* Annotation editor */}
+      {step === 3 &&
+      <AnnotationEditor
+        onShare={() => setStep(4)}
+        onDone={() => setStep(0)} />
+
+      }
+
+      {/* Share panel */}
+      {step === 4 && <SharePanel onClose={() => setStep(0)} />}
+
+      {/* Step nav */}
+      <StepNav step={step} setStep={setStep} />
+    </div>);
+
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
