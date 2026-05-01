@@ -18,8 +18,113 @@ html, body {
 .gallery-sidebar {
   width: 168px; flex-shrink: 0;
   background: #060412; border-right: 1px solid rgba(255,255,255,.06);
-  display: flex; flex-direction: column; overflow: hidden;
+  display: flex; flex-direction: column; overflow: hidden; position:relative;
+  min-width: 132px; max-width: 360px;
 }
+.gallery-resizer {
+  width:5px; flex-shrink:0; cursor:ew-resize;
+  background:linear-gradient(to right, rgba(255,255,255,.04), transparent);
+  -webkit-app-region:no-drag;
+}
+.gallery-resizer:hover { background:rgba(108,78,246,.32); }
+.gallery-projects {
+  border-bottom:1px solid rgba(255,255,255,.06);
+  padding:6px;display:flex;flex-direction:column;gap:4px;
+  -webkit-app-region:no-drag;
+}
+.project-row {
+  height:24px;border:1px solid transparent;border-radius:6px;
+  display:flex;align-items:center;gap:6px;padding:0 7px;
+  color:rgba(255,255,255,.38);font-size:10.5px;font-weight:600;
+  cursor:pointer;user-select:none;
+}
+.project-row:hover { background:rgba(255,255,255,.05); color:rgba(255,255,255,.68); }
+.project-row.active { background:rgba(108,78,246,.2); color:#fff; border-color:rgba(108,78,246,.32); }
+.project-row.drop { border-color:#FBBF24; background:rgba(251,191,36,.12); }
+.project-name { flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.project-delete {
+  width:18px;height:18px;border:0;border-radius:5px;background:transparent;
+  color:rgba(255,255,255,.28);cursor:pointer;font:700 12px inherit;
+}
+.project-delete:hover { background:rgba(239,68,68,.25);color:#fff; }
+.project-add {
+  margin:6px;height:26px;border:1px dashed rgba(255,255,255,.14);
+  border-radius:7px;background:rgba(255,255,255,.04);
+  color:rgba(255,255,255,.56);font:700 11px inherit;
+  cursor:pointer;-webkit-app-region:no-drag;
+}
+.project-add:hover { color:#fff;border-color:rgba(108,78,246,.45);background:rgba(108,78,246,.12); }
+.project-create {
+  display:none;gap:4px;padding:0 6px 6px;-webkit-app-region:no-drag;
+}
+.project-create.on { display:flex; }
+.project-create input {
+  flex:1;min-width:0;height:26px;border:1px solid rgba(255,255,255,.1);
+  border-radius:7px;background:rgba(255,255,255,.06);color:#fff;
+  padding:0 8px;font:11px inherit;outline:none;
+}
+.project-create button {
+  width:28px;height:26px;border:0;border-radius:7px;
+  background:rgba(108,78,246,.24);color:#fff;cursor:pointer;
+  font:700 12px inherit;
+}
+.project-create button.cancel { background:rgba(255,255,255,.06);color:rgba(255,255,255,.5); }
+.context-menu {
+  position:fixed;z-index:500;display:none;min-width:148px;
+  background:#120c28;border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;padding:5px;box-shadow:0 12px 32px rgba(0,0,0,.5);
+}
+.context-submenu {
+  min-width:180px;max-height:min(260px,calc(100vh - 16px));
+  overflow-y:auto;z-index:501;
+}
+.context-menu button {
+  width:100%;height:27px;border:0;border-radius:6px;background:transparent;
+  color:rgba(255,255,255,.7);text-align:left;padding:0 9px;
+  font:600 11px inherit;cursor:pointer;
+}
+.context-menu button.has-submenu {
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.context-menu button.has-submenu::after {
+  content:'›';font-size:14px;line-height:1;color:rgba(255,255,255,.48);
+}
+.context-menu button:hover { background:rgba(108,78,246,.24);color:#fff; }
+.context-menu button.danger:hover { background:rgba(239,68,68,.25); }
+.choice-backdrop {
+  position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.42);z-index:900;
+}
+.choice-backdrop.on { display:flex; }
+.choice-box {
+  width:min(360px,calc(100vw - 32px));border:1px solid rgba(255,255,255,.12);
+  border-radius:10px;background:#120c28;box-shadow:0 18px 54px rgba(0,0,0,.55);
+  padding:14px;color:#fff;
+}
+.choice-box h2 { font-size:14px;margin-bottom:8px; }
+.choice-box p { font-size:11px;line-height:1.5;color:rgba(255,255,255,.55);margin-bottom:12px; }
+.choice-input {
+  width:100%;height:32px;border:1px solid rgba(255,255,255,.12);
+  border-radius:7px;background:rgba(255,255,255,.06);color:#fff;
+  padding:0 10px;margin:0 0 12px;font:12px inherit;outline:none;
+}
+.choice-input:focus { border-color:rgba(108,78,246,.6);background:rgba(255,255,255,.08); }
+.hotkey-grid { display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:12px; }
+.hotkey-row { display:grid;grid-template-columns:104px 1fr;align-items:center;gap:8px; }
+.hotkey-row label { font-size:11px;color:rgba(255,255,255,.55); }
+.hotkey-input {
+  height:30px;border:1px solid rgba(255,255,255,.12);border-radius:7px;
+  background:rgba(255,255,255,.06);color:#fff;padding:0 9px;
+  font:700 11px inherit;outline:none;cursor:pointer;
+}
+.hotkey-input.recording { border-color:#FBBF24;background:rgba(251,191,36,.12); }
+.choice-actions { display:flex;gap:6px; }
+.choice-actions button {
+  flex:1;border:0;border-radius:7px;height:30px;background:rgba(255,255,255,.07);
+  color:rgba(255,255,255,.75);font:700 11px inherit;cursor:pointer;
+}
+.choice-actions button:hover { background:rgba(108,78,246,.26);color:#fff; }
+.choice-actions .danger:hover { background:rgba(239,68,68,.32); }
 .gallery-header {
   padding: 9px 10px 8px; font-size: 10px; font-weight: 600;
   color: rgba(255,255,255,.3); text-transform: uppercase; letter-spacing: .09em;
@@ -56,7 +161,8 @@ html, body {
 }
 .gallery-item:hover { border-color: rgba(108,78,246,.45); background: rgba(108,78,246,.07); }
 .gallery-item.current { border-color: #6C4EF6; }
-.gallery-item img { width: 100%; display: block; pointer-events: none; }
+.gallery-item.selected { border-color:#22C55E; background:rgba(34,197,94,.1); }
+.gallery-item img { width: 100%; display: block; cursor: alias; }
 .gallery-item-name {
   font-size: 8.5px; color: rgba(255,255,255,.26);
   padding: 3px 5px 4px;
@@ -144,6 +250,29 @@ html, body {
   border-top: 1px solid rgba(255,255,255,.06);
   padding: 7px 14px;
   display: flex; align-items: center; gap: 5px; overflow-x: auto;
+  position:relative; z-index:400;
+}
+.toolbar-menu {
+  position:relative; flex-shrink:0;
+}
+.toolbar-menu summary {
+  list-style:none;font-family:inherit;font-size:12px;font-weight:600;
+  padding:7px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.05);color:rgba(255,255,255,.58);
+  cursor:pointer;user-select:none;
+}
+.toolbar-menu summary::-webkit-details-marker { display:none; }
+.toolbar-menu[open] summary { background:rgba(108,78,246,.22);color:#fff; }
+.toolbar-menu .menu-pop {
+  position:fixed;z-index:800;min-width:150px;
+  background:#120c28;border:1px solid rgba(255,255,255,.1);border-radius:8px;
+  padding:5px;box-shadow:0 10px 30px rgba(0,0,0,.45);
+  display:none;flex-direction:column;gap:3px;
+}
+.toolbar-menu[open] .menu-pop { display:flex; }
+.toolbar-menu .menu-pop button {
+  width:100%;height:28px;border-radius:6px;text-align:left;padding:0 9px;
+  box-shadow:none;
 }
 .toolbar::-webkit-scrollbar { display: none; }
 .logo { display:flex;align-items:center;margin-right:6px;padding-right:10px;border-right:1px solid rgba(255,255,255,.08); }
@@ -268,13 +397,20 @@ body.select-mode .select-hint { display: block; }
   <div class="gallery-sidebar">
     <div class="gallery-header">
       <span>Recents</span>
-      <button class="gallery-folder-btn" id="btn-open-folder" title="Open captures folder">📁</button>
+    </div>
+    <button class="project-add" id="btn-new-project" title="New project folder">＋ New Project Folder</button>
+    <div class="project-create" id="project-create">
+      <input id="project-name-input" placeholder="Project name">
+      <button id="project-create-ok" title="Create">✓</button>
+      <button class="cancel" id="project-create-cancel" title="Cancel">×</button>
     </div>
     <div class="gallery-search"><input id="gallery-search" placeholder="Search captures"></div>
+    <div class="gallery-projects" id="gallery-projects"></div>
     <div class="gallery-scroll" id="gallery-scroll">
       <div class="gallery-empty" id="gallery-empty">No captures yet</div>
     </div>
   </div>
+  <div class="gallery-resizer" id="gallery-resizer"></div>
 
   <div class="canvas-wrap" id="cw">
     <canvas id="c"></canvas>
@@ -357,21 +493,93 @@ body.select-mode .select-hint { display: block; }
 
   <div class="sep"></div>
 
+  <details class="toolbar-menu">
+    <summary>Presets</summary>
+    <div class="menu-pop">
+      <button class="abtn abtn-original" id="preset-purple">Purple Arrow</button>
+      <button class="abtn abtn-original" id="preset-warn">Warning</button>
+      <button class="abtn abtn-original" id="preset-redact">Redact Style</button>
+    </div>
+  </details>
+
+  <div class="sep"></div>
+
   <button class="abtn abtn-undo"  id="btn-undo">↩ Undo</button>
   <button class="abtn abtn-undo"  id="btn-redo">↪ Redo</button>
   <button class="abtn abtn-copy"  id="btn-copy">📋 Copy Flat</button>
-  <button class="abtn abtn-save"  id="btn-save">💾 Save Flat</button>
-  <button class="abtn abtn-original" id="btn-save-jpg">Save JPG</button>
-  <button class="abtn abtn-original" id="btn-copy-original">Copy Orig</button>
-  <button class="abtn abtn-original" id="btn-save-original">Save Orig</button>
-  <button class="abtn abtn-original" id="btn-trim">Trim</button>
-  <button class="abtn abtn-original" id="btn-reset-canvas">Reset Canvas</button>
-  <button class="abtn abtn-original" id="btn-permissions">Perms</button>
-  <button class="abtn abtn-original" id="btn-prefs">Prefs</button>
+  <details class="toolbar-menu">
+    <summary>Export</summary>
+    <div class="menu-pop">
+      <button class="abtn abtn-copy"  id="btn-share">Share</button>
+      <button class="abtn abtn-save"  id="btn-save">Save Flat PNG</button>
+      <button class="abtn abtn-original" id="btn-save-jpg">Save Flat JPG</button>
+      <button class="abtn abtn-original" id="btn-copy-original">Copy Original</button>
+      <button class="abtn abtn-original" id="btn-save-original">Save Original</button>
+    </div>
+  </details>
+  <details class="toolbar-menu">
+    <summary>Canvas</summary>
+    <div class="menu-pop">
+      <button class="abtn abtn-original" id="btn-trim">Trim to Content</button>
+      <button class="abtn abtn-original" id="btn-reset-canvas">Reset Bounds</button>
+    </div>
+  </details>
+  <details class="toolbar-menu">
+    <summary>Tools</summary>
+    <div class="menu-pop">
+      <button class="abtn abtn-original" id="btn-ocr">Copy OCR Text</button>
+      <button class="abtn abtn-original" id="btn-redact">Smart Redact</button>
+      <button class="abtn abtn-original" id="btn-permissions">Permissions</button>
+      <button class="abtn abtn-original" id="btn-prefs">Preferences</button>
+      <button class="abtn abtn-original" id="btn-hotkeys">Capture Hotkeys</button>
+      <button class="abtn abtn-original" id="btn-open-folder">Open Captures Folder</button>
+    </div>
+  </details>
   <button class="abtn abtn-close" id="btn-close">✕ Close</button>
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="context-menu" id="gallery-context"></div>
+<div class="context-menu context-submenu" id="project-context"></div>
+<div class="choice-backdrop" id="project-name-backdrop">
+  <div class="choice-box">
+    <h2>New Project</h2>
+    <p>Name the project folder for the selected capture.</p>
+    <input class="choice-input" id="project-name-modal-input" placeholder="Project name">
+    <div class="choice-actions">
+      <button id="project-name-create">Create</button>
+      <button id="project-name-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<div class="choice-backdrop" id="choice-backdrop">
+  <div class="choice-box">
+    <h2 id="choice-title">Delete project?</h2>
+    <p id="choice-message"></p>
+    <div class="choice-actions">
+      <button id="choice-folder">Folder Only</button>
+      <button class="danger" id="choice-images">Delete Images</button>
+      <button id="choice-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<div class="choice-backdrop" id="hotkey-backdrop">
+  <div class="choice-box">
+    <h2>Capture Hotkeys</h2>
+    <p>Click a field, then press the key combo you want to use from anywhere on your Mac.</p>
+    <div class="hotkey-grid">
+      <div class="hotkey-row"><label>Region</label><button class="hotkey-input" data-hotkey="region"></button></div>
+      <div class="hotkey-row"><label>Repeat</label><button class="hotkey-input" data-hotkey="repeat"></button></div>
+      <div class="hotkey-row"><label>Window</label><button class="hotkey-input" data-hotkey="window"></button></div>
+      <div class="hotkey-row"><label>Full Screen</label><button class="hotkey-input" data-hotkey="full"></button></div>
+    </div>
+    <div class="choice-actions">
+      <button id="hotkey-save">Save</button>
+      <button id="hotkey-defaults">Defaults</button>
+      <button id="hotkey-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────────
@@ -400,9 +608,17 @@ let resizeAnchor = null;   // fixed-corner data computed on mousedown
 let currentPath  = null;
 let originalDataURL = null;
 let galleryDragPath = null;
+let galleryDragPaths = [];
+let selectedGalleryPaths = [];
+let lastGallerySelectedPath = null;
 const imageCache = new Map();
+const galleryCompositeCache = new Map();
 const GALLERY_ORDER_KEY = 'jqg-gallery-order';
 const GALLERY_PIN_KEY = 'jqg-gallery-pins';
+const GALLERY_WIDTH_KEY = 'jqg-gallery-width';
+const PROJECTS_KEY = 'jqg-gallery-projects';
+const PROJECT_ASSIGN_KEY = 'jqg-gallery-project-assignments';
+const ACTIVE_PROJECT_KEY = 'jqg-gallery-active-project';
 const PREFS_KEY = 'jqg-editor-prefs';
 const resizeHandle = document.getElementById('canvas-resize-handle');
 let undoStack = [];
@@ -484,6 +700,22 @@ function applyPrefs() {
   if (prefs.stroke) updateStrokeUI(prefs.stroke);
 }
 
+function applyAnnotationPreset(name) {
+  const presets = {
+    purple: { color:'#6C4EF6', stroke:15, tool:'arrow' },
+    warn: { color:'#EF4444', stroke:22, tool:'arrow' },
+    redact: { color:'#000000', stroke:24, tool:'blur' },
+  };
+  const p = presets[name];
+  if (!p) return;
+  color = p.color;
+  updateStrokeUI(p.stroke);
+  document.querySelectorAll('.sw').forEach(x => x.classList.toggle('on', x.dataset.c === color));
+  setTool(p.tool);
+  savePrefs({ color, stroke: sw, preset:name });
+  toast(`${name.charAt(0).toUpperCase()+name.slice(1)} preset`);
+}
+
 function updateCanvasView() {
   canvas.style.width = Math.max(1, Math.round(canvas.width * zoom)) + 'px';
   canvas.style.height = Math.max(1, Math.round(canvas.height * zoom)) + 'px';
@@ -542,6 +774,49 @@ function cachedImage(src) {
   img.src = src;
   imageCache.set(src, rec);
   return rec;
+}
+
+function imageReady(src) {
+  return new Promise((resolve,reject)=>{
+    const rec=cachedImage(src);
+    if (!rec) return resolve(null);
+    if (rec.loaded) return resolve(rec.img);
+    rec.img.addEventListener('load',()=>resolve(rec.img),{once:true});
+    rec.img.addEventListener('error',reject,{once:true});
+  });
+}
+
+async function warmGalleryComposite(item) {
+  if (!item?.filePath) return null;
+  const cached=galleryCompositeCache.get(item.filePath);
+  if (cached) return cached.promise;
+  const cachedEntry={ dataURL:null, promise:null };
+  const task=(async()=>{
+    const bg=await imageReady(item.fileURL || item.thumb);
+    if (!bg) return null;
+    const annotations=Array.isArray(item.annotations)?item.annotations:[];
+    await Promise.all(annotations.filter(a=>a.type==='image'&&a.src).map(a=>imageReady(a.src).catch(()=>null)));
+    const off=document.createElement('canvas');
+    off.width=item.canvasSize?.width || bg.naturalWidth;
+    off.height=item.canvasSize?.height || bg.naturalHeight;
+    const oc=off.getContext('2d');
+    oc.drawImage(bg,0,0);
+    annotations.forEach(a=>drawAnn(oc,a));
+    cachedEntry.dataURL=off.toDataURL('image/png');
+    return cachedEntry.dataURL;
+  })();
+  cachedEntry.promise=task;
+  galleryCompositeCache.set(item.filePath,cachedEntry);
+  return task;
+}
+
+function dataURLToFile(dataURL, filename) {
+  const [meta,data]=dataURL.split(',');
+  const mime=(meta.match(/data:(.*?);/)||[])[1] || 'image/png';
+  const bin=atob(data);
+  const bytes=new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return new File([bytes], filename, { type:mime });
 }
 
 function readFileAsDataURL(file) {
@@ -650,6 +925,9 @@ document.getElementById('sw-range').addEventListener('input', e => {
 document.getElementById('btn-zoom-out').addEventListener('click', () => setZoom(zoom / 1.2));
 document.getElementById('btn-zoom-in').addEventListener('click', () => setZoom(zoom * 1.2));
 document.getElementById('btn-zoom-fit').addEventListener('click', fitZoom);
+document.getElementById('preset-purple').addEventListener('click', () => applyAnnotationPreset('purple'));
+document.getElementById('preset-warn').addEventListener('click', () => applyAnnotationPreset('warn'));
+document.getElementById('preset-redact').addEventListener('click', () => applyAnnotationPreset('redact'));
 
 document.getElementById('insp-color').addEventListener('input', e => mutateSelected(a => { a.color=e.target.value; }));
 document.getElementById('insp-stroke').addEventListener('input', e => mutateSelected(a => {
@@ -880,9 +1158,13 @@ function updateInspector() {
   document.getElementById('inspector-controls').style.display = a ? 'block' : 'none';
   document.getElementById('inspector-type').textContent = a ? a.type : 'None';
   if (!a) return;
+  const strokeControl=document.getElementById('insp-stroke');
+  const opacityControl=document.getElementById('insp-opacity');
+  strokeControl.max = a.type === 'blur' ? 500 : 150;
+  opacityControl.max = a.type === 'blur' ? 200 : 100;
   document.getElementById('insp-color').value = a.color || color;
-  document.getElementById('insp-stroke').value = Math.max(1, Math.min(150, Math.round(toScreenSize(a.sw || a.fs || currentCanvasStroke()))));
-  document.getElementById('insp-opacity').value = Math.round((a.opacity ?? 1) * 100);
+  strokeControl.value = Math.max(1, Math.min(+strokeControl.max, Math.round(toScreenSize(a.sw || a.fs || currentCanvasStroke()))));
+  opacityControl.value = Math.round((a.opacity ?? 1) * 100);
   document.getElementById('insp-text-size').value = Math.round(toScreenSize(a.fs || currentCanvasTextSize()));
 }
 
@@ -963,7 +1245,8 @@ function drawBlockArrow(c, x1, y1, x2, y2, sw) {
 // drawAnn accepts a ctxArg so it can be called for offscreen compositing too
 function drawAnn(c, a) {
   c.save();
-  c.globalAlpha = a.opacity ?? 1;
+  const annOpacity = a.opacity ?? 1;
+  c.globalAlpha = Math.min(1, annOpacity);
   c.strokeStyle=a.color; c.fillStyle=a.color;
   c.lineWidth=a.sw||3; c.lineCap='round'; c.lineJoin='round';
 
@@ -1017,8 +1300,15 @@ function drawAnn(c, a) {
       if (bgImage) {
         const off=document.createElement('canvas'); off.width=bw; off.height=bh;
         const oc=off.getContext('2d'); oc.drawImage(bgImage,-bx,-by,canvas.width,canvas.height);
-        c.save(); c.filter=`blur(${Math.max(6,a.sw*3)}px)`;
+        c.save(); c.filter=`blur(${Math.max(1,a.sw*2.5)}px)`;
         c.drawImage(off,bx,by,bw,bh); c.restore();
+      }
+      if (annOpacity > 1) {
+        c.save();
+        c.globalAlpha=Math.min(.98, annOpacity - 1);
+        c.fillStyle=a.color || '#000';
+        c.fillRect(bx,by,bw,bh);
+        c.restore();
       }
       c.strokeStyle='rgba(108,78,246,.5)'; c.lineWidth=1; c.setLineDash([4,4]);
       c.strokeRect(bx,by,bw,bh); c.setLineDash([]); break;
@@ -1401,6 +1691,55 @@ async function doCopy() {
   if (window.electronAPI) { window.electronAPI.editorCopy(flatDataURL()); toast('Copied!'); }
 }
 
+async function doShare() {
+  if (!window.electronAPI) return;
+  const ts=new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
+  const r=await window.electronAPI.shareImage({imageDataURL:flatDataURL(),filename:`share-${ts}.png`});
+  toast(r?.success ? 'Share file revealed and copied' : 'Share failed');
+}
+
+async function runOCR() {
+  if (!window.electronAPI) return null;
+  toast('Reading text...');
+  const r=await window.electronAPI.ocrImage({imageDataURL:flatDataURL()});
+  if (!r?.success) { toast(r?.error ? `OCR: ${r.error.slice(0,80)}` : 'OCR unavailable'); return null; }
+  return r.items || [];
+}
+
+async function doOCRCopy() {
+  const items=await runOCR();
+  if (!items) return;
+  const text=items.map(i=>i.text).join('\n').trim();
+  if (!text) { toast('No text found'); return; }
+  await navigator.clipboard.writeText(text);
+  toast('Text copied');
+}
+
+function shouldRedact(text) {
+  return [
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
+    /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b/,
+    /\b(?:\d[ -]*?){13,19}\b/,
+    /\b(?:api[_-]?key|secret|token|password|passwd|bearer)\b/i,
+    /\b[A-Za-z0-9_\-]{24,}\b/,
+  ].some(rx=>rx.test(text));
+}
+
+async function doSmartRedact() {
+  const items=await runOCR();
+  if (!items) return;
+  const matches=items.filter(i=>shouldRedact(i.text));
+  if (!matches.length) { toast('No sensitive text found'); return; }
+  recordHistory();
+  const pad=toCanvasSize(5);
+  matches.forEach(i=>{
+    anns.push({type:'blur',x:i.x-pad,y:i.y-pad,w:i.w+pad*2,h:i.h+pad*2,sw:toCanvasSize(24),color:'#000000',opacity:1.95});
+  });
+  selectedIdx=anns.length-1;
+  saveAnns(); render(); updateInspector();
+  toast(`Redacted ${matches.length} item${matches.length===1?'':'s'}`);
+}
+
 async function doSave() {
   if (!window.electronAPI) return;
   const ts=new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
@@ -1458,6 +1797,95 @@ async function showPermissions() {
   const msg=`Screen Recording: ${status?.screen || 'unknown'}`;
   if (confirm(`${msg}\n\nOpen macOS Screen Recording settings?`)) window.electronAPI?.openScreenSettings?.();
 }
+
+let hotkeyDraft = {};
+
+function displayHotkey(accelerator) {
+  return String(accelerator || '')
+    .replace(/CommandOrControl/g,'⌘/Ctrl')
+    .replace(/Command/g,'⌘')
+    .replace(/Control/g,'Ctrl')
+    .replace(/Shift/g,'⇧')
+    .replace(/Alt/g,'⌥')
+    .replace(/\+/g,' + ');
+}
+
+function keyFromEvent(e) {
+  if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3);
+  if (/^Digit[0-9]$/.test(e.code)) return e.code.slice(5);
+  if (/^F\d{1,2}$/.test(e.code)) return e.code;
+  const named = {
+    Backquote:'`', Minus:'-', Equal:'=', BracketLeft:'[', BracketRight:']',
+    Backslash:'\\', Semicolon:';', Quote:"'", Comma:',', Period:'.', Slash:'/',
+    Space:'Space', Enter:'Enter', Escape:'Escape', Tab:'Tab',
+    ArrowUp:'Up', ArrowDown:'Down', ArrowLeft:'Left', ArrowRight:'Right',
+    Delete:'Delete', Backspace:'Backspace',
+  };
+  return named[e.code] || '';
+}
+
+function acceleratorFromEvent(e) {
+  const key=keyFromEvent(e);
+  if (!key || ['Shift','Control','Alt','Meta'].includes(e.key)) return '';
+  const mods=[];
+  if (e.metaKey || e.ctrlKey) mods.push('CommandOrControl');
+  if (e.shiftKey) mods.push('Shift');
+  if (e.altKey) mods.push('Alt');
+  if (!mods.length) return '';
+  return [...mods,key].join('+');
+}
+
+function renderHotkeyDraft() {
+  document.querySelectorAll('.hotkey-input').forEach(btn=>{
+    btn.textContent=displayHotkey(hotkeyDraft[btn.dataset.hotkey]);
+  });
+}
+
+async function showHotkeys() {
+  const data=await window.electronAPI?.shortcutsGet?.();
+  hotkeyDraft={...(data?.shortcuts || {})};
+  renderHotkeyDraft();
+  const back=document.getElementById('hotkey-backdrop');
+  back.classList.add('on');
+}
+
+document.querySelectorAll('.hotkey-input').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.hotkey-input').forEach(b=>b.classList.remove('recording'));
+    btn.classList.add('recording');
+    btn.textContent='Press keys...';
+    btn.focus();
+  });
+  btn.addEventListener('keydown',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    const accelerator=acceleratorFromEvent(e);
+    if (!accelerator) return;
+    hotkeyDraft[btn.dataset.hotkey]=accelerator;
+    btn.classList.remove('recording');
+    renderHotkeyDraft();
+  });
+  btn.addEventListener('blur',()=>{ btn.classList.remove('recording'); renderHotkeyDraft(); });
+});
+
+document.getElementById('hotkey-save').addEventListener('click',async ()=>{
+  const result=await window.electronAPI?.shortcutsSet?.(hotkeyDraft);
+  if (result?.shortcuts) hotkeyDraft=result.shortcuts;
+  renderHotkeyDraft();
+  document.getElementById('hotkey-backdrop').classList.remove('on');
+  if (result?.success) toast('Hotkeys saved');
+  else toast('Some hotkeys are already in use');
+});
+
+document.getElementById('hotkey-defaults').addEventListener('click',async ()=>{
+  const data=await window.electronAPI?.shortcutsGet?.();
+  hotkeyDraft={...(data?.defaults || {})};
+  renderHotkeyDraft();
+});
+
+document.getElementById('hotkey-cancel').addEventListener('click',()=>{
+  document.getElementById('hotkey-backdrop').classList.remove('on');
+});
 
 function showPrefs() {
   const nextStroke=prompt('Default stroke size', String(sw));
@@ -1551,16 +1979,264 @@ function moveGalleryItem(dragPath, targetPath) {
 function replaceGalleryPath(oldPath, newPath) {
   setGalleryOrder(getGalleryOrder().map(fp => fp === oldPath ? newPath : fp));
   setGalleryPins(getGalleryPins().map(fp => fp === oldPath ? newPath : fp));
+  const assignments=getProjectAssignments();
+  if (assignments[oldPath]) {
+    assignments[newPath]=assignments[oldPath];
+    delete assignments[oldPath];
+    setProjectAssignments(assignments);
+  }
 }
 
 function removeGalleryPath(filePath) {
   setGalleryOrder(getGalleryOrder().filter(fp => fp !== filePath));
   setGalleryPins(getGalleryPins().filter(fp => fp !== filePath));
+  const assignments=getProjectAssignments();
+  delete assignments[filePath];
+  setProjectAssignments(assignments);
+  selectedGalleryPaths=selectedGalleryPaths.filter(fp=>fp!==filePath);
+}
+
+function visibleGalleryPaths() {
+  return [...document.querySelectorAll('.gallery-item')].map(el=>el.dataset.fp);
+}
+
+function syncGallerySelection() {
+  document.querySelectorAll('.gallery-item').forEach(el=>{
+    el.classList.toggle('selected',selectedGalleryPaths.includes(el.dataset.fp));
+  });
+}
+
+function selectGalleryItem(filePath,e) {
+  const visible=visibleGalleryPaths();
+  if (e?.shiftKey && lastGallerySelectedPath && visible.includes(lastGallerySelectedPath)) {
+    const a=visible.indexOf(lastGallerySelectedPath);
+    const b=visible.indexOf(filePath);
+    const [start,end]=[Math.min(a,b),Math.max(a,b)];
+    selectedGalleryPaths=visible.slice(start,end+1);
+  } else if (e?.metaKey || e?.ctrlKey) {
+    selectedGalleryPaths=selectedGalleryPaths.includes(filePath)
+      ? selectedGalleryPaths.filter(fp=>fp!==filePath)
+      : [...selectedGalleryPaths,filePath];
+    lastGallerySelectedPath=filePath;
+  } else {
+    selectedGalleryPaths=[filePath];
+    lastGallerySelectedPath=filePath;
+  }
+  syncGallerySelection();
+}
+
+function contextTargets(filePath) {
+  return selectedGalleryPaths.includes(filePath) ? [...selectedGalleryPaths] : [filePath];
+}
+
+function galleryDragTargets(filePath) {
+  return selectedGalleryPaths.includes(filePath) ? [...selectedGalleryPaths] : [filePath];
+}
+
+function getProjects() {
+  try { return JSON.parse(localStorage.getItem(PROJECTS_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function setProjects(projects) {
+  localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+}
+
+function getProjectAssignments() {
+  try { return JSON.parse(localStorage.getItem(PROJECT_ASSIGN_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function setProjectAssignments(assignments) {
+  localStorage.setItem(PROJECT_ASSIGN_KEY, JSON.stringify(assignments));
+}
+
+function activeProject() {
+  return localStorage.getItem(ACTIVE_PROJECT_KEY) || 'all';
+}
+
+function setActiveProject(id) {
+  localStorage.setItem(ACTIVE_PROJECT_KEY, id);
+  renderProjects();
+  loadGallery();
+}
+
+function createProjectNamed(name) {
+  const clean=name?.trim();
+  if (!clean) return null;
+  const projects=getProjects();
+  const id='p-'+Date.now().toString(36);
+  projects.push({id,name:clean});
+  setProjects(projects);
+  renderProjects();
+  toast('Project created');
+  return id;
+}
+
+function askProjectName() {
+  const back=document.getElementById('project-name-backdrop');
+  const input=document.getElementById('project-name-modal-input');
+  const create=document.getElementById('project-name-create');
+  const cancel=document.getElementById('project-name-cancel');
+  input.value='';
+  back.classList.add('on');
+  setTimeout(()=>input.focus(),0);
+  return new Promise(resolve=>{
+    const done=value=>{
+      back.classList.remove('on');
+      create.onclick=null;
+      cancel.onclick=null;
+      input.onkeydown=null;
+      resolve(value);
+    };
+    create.onclick=()=>done(input.value.trim());
+    cancel.onclick=()=>done(null);
+    input.onkeydown=e=>{
+      if (e.key==='Enter') done(input.value.trim());
+      if (e.key==='Escape') done(null);
+    };
+  });
+}
+
+function createProject() {
+  const input=document.getElementById('project-name-input');
+  const id=createProjectNamed(input.value);
+  if (!id) return;
+  input.value='';
+  document.getElementById('project-create').classList.remove('on');
+  setActiveProject(id);
+}
+
+function showProjectCreate() {
+  const row=document.getElementById('project-create');
+  row.classList.add('on');
+  const input=document.getElementById('project-name-input');
+  input.focus();
+  input.select();
+}
+
+function hideProjectCreate() {
+  document.getElementById('project-name-input').value='';
+  document.getElementById('project-create').classList.remove('on');
+}
+
+function assignToProject(filePath, projectId) {
+  const assignments=getProjectAssignments();
+  if (projectId==='all') delete assignments[filePath];
+  else assignments[filePath]=projectId;
+  setProjectAssignments(assignments);
+  toast(projectId==='all'?'Removed from project':'Moved to project');
+  loadGallery();
+}
+
+function assignManyToProject(filePaths, projectId) {
+  const assignments=getProjectAssignments();
+  filePaths.forEach(filePath=>{
+    if (projectId==='all') delete assignments[filePath];
+    else assignments[filePath]=projectId;
+  });
+  setProjectAssignments(assignments);
+  toast(projectId==='all'
+    ? `Removed ${filePaths.length} from project`
+    : `Moved ${filePaths.length} to project`);
+  loadGallery();
+}
+
+async function deleteProject(project) {
+  const assigned = Object.entries(getProjectAssignments())
+    .filter(([, projectId]) => projectId === project.id)
+    .map(([filePath]) => filePath);
+  const action = await projectDeleteChoice(project, assigned.length);
+  if (!action) return;
+
+  if (action === 'images') {
+    const ok = confirm(`This will permanently delete ${assigned.length} image${assigned.length===1?'':'s'} assigned to "${project.name}". Continue?`);
+    if (!ok) return;
+    for (const filePath of assigned) {
+      await window.electronAPI.galleryDelete(filePath);
+      removeGalleryPath(filePath);
+      if (currentPath === filePath) {
+        currentPath=null; bgImage=null; originalDataURL=null; anns=[]; selectedIdx=-1;
+      }
+    }
+  } else {
+    const assignments=getProjectAssignments();
+    assigned.forEach(filePath=>delete assignments[filePath]);
+    setProjectAssignments(assignments);
+  }
+
+  setProjects(getProjects().filter(p=>p.id!==project.id));
+  if (activeProject()===project.id) setActiveProject('all');
+  else { renderProjects(); loadGallery(); }
+  render();
+  toast(action==='images'?'Project and captures deleted':'Project deleted');
+}
+
+function projectDeleteChoice(project, count) {
+  return new Promise(resolve=>{
+    const back=document.getElementById('choice-backdrop');
+    document.getElementById('choice-title').textContent=`Delete "${project.name}"?`;
+    document.getElementById('choice-message').textContent=
+      `This project contains ${count} capture${count===1?'':'s'}. Delete only the folder to move captures back to All, or delete the images too.`;
+    const done=value=>{
+      back.classList.remove('on');
+      folder.onclick=images.onclick=cancel.onclick=null;
+      resolve(value);
+    };
+    const folder=document.getElementById('choice-folder');
+    const images=document.getElementById('choice-images');
+    const cancel=document.getElementById('choice-cancel');
+    folder.onclick=()=>done('folder');
+    images.onclick=()=>done('images');
+    cancel.onclick=()=>done(null);
+    back.classList.add('on');
+  });
+}
+
+function renderProjects() {
+  const wrap=document.getElementById('gallery-projects');
+  const projects=[{id:'all',name:'All Captures'}, ...getProjects()];
+  const current=activeProject();
+  wrap.innerHTML='';
+  projects.forEach(project=>{
+    const row=document.createElement('div');
+    row.className='project-row'+(project.id===current?' active':'');
+    row.dataset.projectId=project.id;
+    row.innerHTML=`<span>📁</span><span class="project-name"></span>`;
+    row.querySelector('.project-name').textContent=project.name;
+    if (project.id!=='all') {
+      const del=document.createElement('button');
+      del.className='project-delete';
+      del.textContent='×';
+      del.title='Delete project';
+      del.addEventListener('click',e=>{e.stopPropagation(); deleteProject(project);});
+      row.appendChild(del);
+    }
+    row.addEventListener('click',()=>setActiveProject(project.id));
+    row.addEventListener('dragover',e=>{
+      e.preventDefault(); e.stopPropagation(); row.classList.add('drop');
+    });
+    row.addEventListener('dragleave',()=>row.classList.remove('drop'));
+    row.addEventListener('drop',e=>{
+      e.preventDefault(); e.stopPropagation(); row.classList.remove('drop');
+      const fp=e.dataTransfer.getData('application/x-jqg-gallery-file') || galleryDragPath;
+      const encoded=e.dataTransfer.getData('application/x-jqg-gallery-files');
+      let paths=[];
+      try { paths=encoded ? JSON.parse(encoded) : []; } catch { paths=[]; }
+      if (!paths.length && galleryDragPaths.length) paths=[...galleryDragPaths];
+      if (!paths.length && fp) paths=[fp];
+      if (paths.length) assignManyToProject(paths,project.id);
+    });
+    wrap.appendChild(row);
+  });
 }
 
 document.getElementById('btn-undo').addEventListener('click',undo);
 document.getElementById('btn-redo').addEventListener('click',redo);
 document.getElementById('btn-copy').addEventListener('click',doCopy);
+document.getElementById('btn-share').addEventListener('click',doShare);
+document.getElementById('btn-ocr').addEventListener('click',doOCRCopy);
+document.getElementById('btn-redact').addEventListener('click',doSmartRedact);
 document.getElementById('btn-save').addEventListener('click',doSave);
 document.getElementById('btn-save-jpg').addEventListener('click',doSaveJpg);
 document.getElementById('btn-copy-original').addEventListener('click',doCopyOriginal);
@@ -1569,13 +2245,66 @@ document.getElementById('btn-trim').addEventListener('click',trimCanvas);
 document.getElementById('btn-reset-canvas').addEventListener('click',resetCanvasBounds);
 document.getElementById('btn-permissions').addEventListener('click',showPermissions);
 document.getElementById('btn-prefs').addEventListener('click',showPrefs);
+document.getElementById('btn-hotkeys').addEventListener('click',showHotkeys);
 document.getElementById('btn-close').addEventListener('click',()=>{
   if(window.electronAPI) window.electronAPI.editorClose(); else window.close();
 });
 document.getElementById('btn-open-folder').addEventListener('click',()=>{
   if(window.electronAPI) window.electronAPI.galleryOpenFolder();
 });
+document.getElementById('btn-new-project').addEventListener('click',showProjectCreate);
+document.getElementById('project-create-ok').addEventListener('click',createProject);
+document.getElementById('project-create-cancel').addEventListener('click',hideProjectCreate);
+document.getElementById('project-name-input').addEventListener('keydown',e=>{
+  if (e.key==='Enter') createProject();
+  if (e.key==='Escape') hideProjectCreate();
+});
 document.getElementById('gallery-search').addEventListener('input',()=>loadGallery());
+
+const gallerySidebar=document.querySelector('.gallery-sidebar');
+const savedGalleryWidth=Number(localStorage.getItem(GALLERY_WIDTH_KEY));
+if (savedGalleryWidth) gallerySidebar.style.width=savedGalleryWidth+'px';
+document.getElementById('gallery-resizer').addEventListener('mousedown',e=>{
+  e.preventDefault();
+  const startX=e.clientX;
+  const startW=gallerySidebar.getBoundingClientRect().width;
+  const onMove=ev=>{
+    const w=Math.max(132,Math.min(360,startW+(ev.clientX-startX)));
+    gallerySidebar.style.width=w+'px';
+  };
+  const onUp=()=>{
+    localStorage.setItem(GALLERY_WIDTH_KEY,Math.round(gallerySidebar.getBoundingClientRect().width));
+    document.removeEventListener('mousemove',onMove);
+    document.removeEventListener('mouseup',onUp);
+  };
+  document.addEventListener('mousemove',onMove);
+  document.addEventListener('mouseup',onUp);
+});
+
+function positionToolbarMenus() {
+  document.querySelectorAll('.toolbar-menu[open]').forEach(menu=>{
+    const pop=menu.querySelector('.menu-pop');
+    if (!pop) return;
+    const r=menu.getBoundingClientRect();
+    pop.style.left=Math.min(r.left,window.innerWidth-pop.offsetWidth-8)+'px';
+    pop.style.bottom=(window.innerHeight-r.top+6)+'px';
+  });
+}
+
+document.querySelectorAll('.toolbar-menu').forEach(menu=>{
+  menu.addEventListener('toggle',()=>{
+    if (menu.open) {
+      document.querySelectorAll('.toolbar-menu').forEach(other=>{ if (other!==menu) other.removeAttribute('open'); });
+      requestAnimationFrame(positionToolbarMenus);
+    }
+  });
+});
+window.addEventListener('resize',positionToolbarMenus);
+document.addEventListener('click',e=>{
+  if (!e.target.closest('.toolbar-menu')) {
+    document.querySelectorAll('.toolbar-menu[open]').forEach(menu=>menu.removeAttribute('open'));
+  }
+});
 
 // ── Gallery ───────────────────────────────────────────────────────────────────
 async function openGalleryItem(filePath) {
@@ -1612,11 +2341,126 @@ async function deleteGalleryItem(item) {
   await loadGallery();
 }
 
+async function deleteGalleryTargets(filePaths) {
+  if (!filePaths.length) return;
+  if (!confirm(`Delete ${filePaths.length} capture${filePaths.length===1?'':'s'}?`)) return;
+  for (const filePath of filePaths) {
+    const r = await window.electronAPI.galleryDelete(filePath);
+    if (r?.success) {
+      removeGalleryPath(filePath);
+      if (currentPath === filePath) {
+        currentPath=null; bgImage=null; originalDataURL=null; anns=[]; selectedIdx=-1;
+      }
+    }
+  }
+  render();
+  toast('Deleted');
+  await loadGallery();
+}
+
+function showGalleryContext(item,x,y) {
+  const menu=document.getElementById('gallery-context');
+  const projectMenu=document.getElementById('project-context');
+  if (!selectedGalleryPaths.includes(item.filePath)) {
+    selectedGalleryPaths=[item.filePath];
+    lastGallerySelectedPath=item.filePath;
+    syncGallerySelection();
+  }
+  const targets=contextTargets(item.filePath);
+  menu.innerHTML='';
+  projectMenu.innerHTML='';
+  projectMenu.style.display='none';
+  const add=(label,fn,cls='')=>{
+    const b=document.createElement('button');
+    b.textContent=label; b.className=cls;
+    b.addEventListener('mouseenter',hideProjectSubmenu);
+    b.addEventListener('click',()=>{ hideGalleryContext(); fn(); });
+    menu.appendChild(b);
+    return b;
+  };
+  const addProjectSubmenu=()=>{
+    const b=document.createElement('button');
+    b.type='button';
+    b.textContent='Add to Project';
+    b.className='has-submenu';
+    b.addEventListener('mouseenter',()=>showProjectSubmenu(b,targets));
+    b.addEventListener('click',e=>{
+      e.stopPropagation();
+      showProjectSubmenu(b,targets);
+    });
+    menu.appendChild(b);
+  };
+  const multi=targets.length>1;
+  add(multi?`${targets.length} selected`:'Open',()=>{ if(!multi) openGalleryItem(item.filePath); });
+  if (!multi) add(isPinned(item.filePath)?'Unpin':'Pin',()=>togglePin(item.filePath));
+  if (!multi) add('Rename',()=>renameGalleryItem(item));
+  if (!multi) add('Reveal in Finder',()=>window.electronAPI.galleryReveal(item.filePath));
+  addProjectSubmenu();
+  add('Remove from Project',()=>assignManyToProject(targets,'all'));
+  add('Delete',()=>multi?deleteGalleryTargets(targets):deleteGalleryItem(item),'danger');
+  menu.style.left=Math.min(x,window.innerWidth-210)+'px';
+  menu.style.top=Math.min(y,window.innerHeight-190)+'px';
+  menu.style.display='block';
+}
+
+function showProjectSubmenu(anchor,targets) {
+  const submenu=document.getElementById('project-context');
+  const projects=getProjects();
+  submenu.innerHTML='';
+  const add=(label,fn)=>{
+    const b=document.createElement('button');
+    b.type='button';
+    b.textContent=label;
+    b.addEventListener('click',async e=>{
+      e.stopPropagation();
+      hideGalleryContext();
+      await fn();
+    });
+    submenu.appendChild(b);
+  };
+  add('New Project...',async ()=>{
+    const name=await askProjectName();
+    const id=createProjectNamed(name);
+    if (!id) return;
+    assignManyToProject(targets,id);
+    setActiveProject(id);
+  });
+  projects.forEach(project=>add(project.name,()=>assignManyToProject(targets,project.id)));
+
+  submenu.style.left='-9999px';
+  submenu.style.top='-9999px';
+  submenu.style.display='block';
+  const anchorRect=anchor.getBoundingClientRect();
+  const menuRect=submenu.getBoundingClientRect();
+  let left=anchorRect.right+6;
+  if (left+menuRect.width>window.innerWidth-8) left=anchorRect.left-menuRect.width-6;
+  let top=anchorRect.top-5;
+  if (top+menuRect.height>window.innerHeight-8) top=window.innerHeight-menuRect.height-8;
+  submenu.style.left=Math.max(8,left)+'px';
+  submenu.style.top=Math.max(8,top)+'px';
+}
+
+function hideProjectSubmenu() {
+  document.getElementById('project-context').style.display='none';
+}
+
+function hideGalleryContext() {
+  document.getElementById('gallery-context').style.display='none';
+  hideProjectSubmenu();
+}
+document.addEventListener('click',hideGalleryContext);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')hideGalleryContext();});
+
 async function loadGallery() {
   if (!window.electronAPI) return;
   const items=await window.electronAPI.galleryList();
   const q=document.getElementById('gallery-search').value.trim().toLowerCase();
-  const filtered=q?items.filter(item=>item.filename.toLowerCase().includes(q)):items;
+  const assignments=getProjectAssignments();
+  const project=activeProject();
+  let filtered=project==='all'
+    ? items.filter(item=>!assignments[item.filePath])
+    : items.filter(item=>assignments[item.filePath]===project);
+  filtered=q?filtered.filter(item=>item.filename.toLowerCase().includes(q)):filtered;
   const scroll=document.getElementById('gallery-scroll');
   scroll.innerHTML='';
 
@@ -1634,7 +2478,9 @@ async function loadGallery() {
     div.draggable=true;
 
     const img=document.createElement('img');
-    img.src=item.thumb; img.draggable=false;
+    img.src=item.thumb;
+    img.draggable=true;
+    img.title='Drag to move to a project. Option-drag to another app.';
 
     const lbl=document.createElement('div');
     lbl.className='gallery-item-name';
@@ -1657,23 +2503,64 @@ async function loadGallery() {
 
     div.appendChild(img); div.appendChild(lbl); div.appendChild(actions);
 
-    // Click → load in editor
-    div.addEventListener('click',()=>openGalleryItem(item.filePath));
+    // Click → select/open in editor
+    div.addEventListener('click',e=>{
+      selectGalleryItem(item.filePath,e);
+      if (!e.shiftKey && !e.metaKey && !e.ctrlKey) openGalleryItem(item.filePath);
+    });
+    div.addEventListener('contextmenu',e=>{
+      e.preventDefault();
+      if (!selectedGalleryPaths.includes(item.filePath)) selectGalleryItem(item.filePath,e);
+      showGalleryContext(item,e.clientX,e.clientY);
+    });
+    div.addEventListener('mouseenter',()=>warmGalleryComposite(item).catch(()=>{}));
+    div.addEventListener('mousedown',()=>warmGalleryComposite(item).catch(()=>{}));
 
     // Drag → canvas inserts this capture as a movable image annotation.
     div.addEventListener('dragstart',e=>{
+      if (!selectedGalleryPaths.includes(item.filePath)) selectGalleryItem(item.filePath,e);
+      if (e.target === img && e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        const hasAnnotations=Array.isArray(item.annotations)&&item.annotations.length;
+        const composite=galleryCompositeCache.get(item.filePath)?.dataURL;
+        if (hasAnnotations && composite) {
+          window.electronAPI?.startDragComposite?.({filePath:item.filePath,compositeDataURL:composite});
+        } else if (!hasAnnotations) {
+          window.electronAPI?.startDrag?.(item.filePath);
+        } else {
+          toast('Preparing annotated drag...');
+          warmGalleryComposite(item).then(()=>toast('Ready to drag')).catch(()=>toast('Could not prepare drag'));
+        }
+        return;
+      }
+      const dragTargets=galleryDragTargets(item.filePath);
       galleryDragPath=item.filePath;
+      galleryDragPaths=dragTargets;
       e.dataTransfer.effectAllowed='copyMove';
       e.dataTransfer.setData('application/x-jqg-gallery-file',item.filePath);
+      e.dataTransfer.setData('application/x-jqg-gallery-files',JSON.stringify(dragTargets));
       e.dataTransfer.setData('application/x-jqg-gallery-reorder',item.filePath);
       e.dataTransfer.setData('text/plain',item.filePath);
+      e.dataTransfer.setData('text/uri-list',item.fileURL || `file://${item.filePath}`);
+      e.dataTransfer.setData('DownloadURL',`image/png:${item.filename}:${item.fileURL || `file://${item.filePath}`}`);
+      const composite=galleryCompositeCache.get(item.filePath)?.dataURL;
+      if (composite) {
+        try {
+          const file=dataURLToFile(composite,item.filename);
+          e.dataTransfer.items.add(file);
+          e.dataTransfer.setData('text/html',`<img src="${composite}" alt="${item.filename}">`);
+        } catch {}
+      }
       if (img.complete) e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);
     });
 
     div.addEventListener('dragend',()=>{
       galleryDragPath=null;
+      galleryDragPaths=[];
       document.querySelectorAll('.gallery-item').forEach(el=>
         el.classList.toggle('current',el.dataset.fp===currentPath));
+      syncGallerySelection();
     });
 
     div.addEventListener('dragover',e=>{
@@ -1683,7 +2570,10 @@ async function loadGallery() {
       div.classList.add('current');
     });
 
-    div.addEventListener('dragleave',()=>div.classList.toggle('current',item.filePath===currentPath));
+    div.addEventListener('dragleave',()=>{
+      div.classList.toggle('current',item.filePath===currentPath);
+      div.classList.toggle('selected',selectedGalleryPaths.includes(item.filePath));
+    });
 
     div.addEventListener('drop',e=>{
       e.preventDefault();
@@ -1691,10 +2581,17 @@ async function loadGallery() {
       const dragPath=e.dataTransfer.getData('application/x-jqg-gallery-reorder') || galleryDragPath;
       moveGalleryItem(dragPath,item.filePath);
       galleryDragPath=null;
+      galleryDragPaths=[];
     });
 
     scroll.appendChild(div);
   });
+  selectedGalleryPaths=selectedGalleryPaths.filter(fp=>filtered.some(item=>item.filePath===fp));
+  syncGallerySelection();
+  filtered
+    .filter(item=>Array.isArray(item.annotations)&&item.annotations.length)
+    .slice(0,8)
+    .forEach(item=>warmGalleryComposite(item).catch(()=>{}));
 }
 
 // ── Load image ────────────────────────────────────────────────────────────────
@@ -1742,6 +2639,7 @@ if (window.electronAPI) {
 }
 
 applyPrefs();
+renderProjects();
 loadRuntimeBadge();
 loadGallery();
 </script>

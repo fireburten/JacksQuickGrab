@@ -6,15 +6,61 @@ const {
 const path    = require('path');
 const fs      = require('fs');
 const os      = require('os');
+const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 
 let hudWindow  = null;
 let captureWin = null;
 let editorWin  = null;
 let tray       = null;
+let windowPickerWin = null;
+let lastRegionRect = null;
 
 const SAVE_DIR = path.join(os.homedir(), 'Documents', "Jack's Quick Grab");
 const ANNOTATION_DIR = path.join(SAVE_DIR, '.annotations');
+const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
+const DEFAULT_SHORTCUTS = {
+  region: 'CommandOrControl+Shift+2',
+  repeat: 'CommandOrControl+Shift+5',
+  window: 'CommandOrControl+Shift+W',
+  full: 'CommandOrControl+Shift+3',
+};
+const MACOS_REGION_SHORTCUT = 'CommandOrControl+Shift+4';
+
+function readSettings() {
+  try { return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')); }
+  catch { return {}; }
+}
+
+function writeSettings(next) {
+  const settings = { ...readSettings(), ...next };
+  fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true });
+  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+  return settings;
+}
+
+function readShortcuts() {
+  const shortcuts = { ...DEFAULT_SHORTCUTS, ...(readSettings().shortcuts || {}) };
+  if (shortcuts.region === MACOS_REGION_SHORTCUT) shortcuts.region = DEFAULT_SHORTCUTS.region;
+  return shortcuts;
+}
+
+function captureFromShortcut(kind) {
+  if (kind === 'repeat') return captureLastRegion();
+  return triggerCapture(kind);
+}
+
+function registerCaptureShortcuts() {
+  globalShortcut.unregisterAll();
+  const shortcuts = readShortcuts();
+  const failures = [];
+  Object.entries(shortcuts).forEach(([kind, accelerator]) => {
+    if (!accelerator) return;
+    const ok = globalShortcut.register(accelerator, () => captureFromShortcut(kind));
+    if (!ok) failures.push({ kind, accelerator });
+  });
+  return failures;
+}
 
 function annotationPathFor(filePath) {
   const base = path.basename(filePath).replace(/\.(png|jpg|jpeg)$/i, '.json');
@@ -29,7 +75,24 @@ function galleryPayload(filePath) {
   const filename = path.basename(filePath);
   const img = nativeImage.createFromPath(filePath);
   const thumb = img.resize({ width: 150 });
-  return { filename, filePath, thumb: thumb.toDataURL() };
+  let annotations = [];
+  let canvasSize = null;
+  try {
+    const annPath = annotationPathFor(filePath);
+    const legacyAnnPath = legacyAnnotationPathFor(filePath);
+    const readPath = fs.existsSync(annPath) ? annPath : legacyAnnPath;
+    const saved = fs.existsSync(readPath) ? JSON.parse(fs.readFileSync(readPath, 'utf8')) : [];
+    annotations = Array.isArray(saved) ? saved : (saved.anns || []);
+    canvasSize = Array.isArray(saved) ? null : (saved.canvasSize || null);
+  } catch {}
+  return {
+    filename,
+    filePath,
+    fileURL: pathToFileURL(filePath).href,
+    thumb: thumb.toDataURL(),
+    annotations,
+    canvasSize,
+  };
 }
 
 function safeCapturePath(filePath) {
@@ -46,6 +109,24 @@ function safeCaptureName(name, ext) {
     .replace(/\s+/g, ' ')
     .trim();
   return (base || `screenshot-${Date.now()}`) + ext.toLowerCase();
+}
+
+function writeDataURLTemp(imageDataURL, ext = 'png') {
+  const tmp = path.join(os.tmpdir(), `jqg-${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`);
+  const data = imageDataURL.replace(/^data:image\/\w+;base64,/, '');
+  fs.writeFileSync(tmp, Buffer.from(data, 'base64'));
+  return tmp;
+}
+
+function ocrScriptPath() {
+  const bundled = path.join(app.getAppPath(), 'scripts', 'ocr.swift');
+  const tmp = path.join(os.tmpdir(), 'jqg-ocr.swift');
+  try {
+    fs.copyFileSync(bundled, tmp);
+    return tmp;
+  } catch {
+    return bundled;
+  }
 }
 
 function migrateLegacyAnnotations() {
@@ -73,12 +154,17 @@ function createTray() {
 }
 
 function buildTrayMenu() {
+  const settings = readSettings();
+  const shortcuts = readShortcuts();
   return Menu.buildFromTemplate([
     { label: "Jack's Quick Grab", enabled: false },
     { type: 'separator' },
-    { label: 'Capture Region',      accelerator: 'CmdOrCtrl+Shift+4', click: () => triggerCapture('region') },
-    { label: 'Capture Window',      accelerator: 'CmdOrCtrl+Shift+W', click: () => triggerCapture('window') },
-    { label: 'Capture Full Screen', accelerator: 'CmdOrCtrl+Shift+3', click: () => triggerCapture('full') },
+    { label: 'Capture Region',      accelerator: shortcuts.region, click: () => triggerCapture('region') },
+    { label: 'Repeat Last Region',  accelerator: shortcuts.repeat, enabled: !!lastRegionRect, click: captureLastRegion },
+    { label: 'Capture Window',      accelerator: shortcuts.window, click: () => triggerCapture('window') },
+    { label: 'Capture Full Screen', accelerator: shortcuts.full, click: () => triggerCapture('full') },
+    { label: 'Delayed Full Screen (5s)', click: () => delayedCapture('full', 5000) },
+    { label: 'Auto-copy After Capture', type: 'checkbox', checked: !!settings.autoCopyAfterCapture, click: item => writeSettings({ autoCopyAfterCapture: item.checked }) },
     { type: 'separator' },
     { label: 'Show / Hide HUD', click: toggleHUD },
     { label: 'Open Captures Folder', click: () => shell.openPath(SAVE_DIR) },
@@ -160,6 +246,26 @@ function maybeShowScreenPermissionHelp() {
   }
 }
 
+function showFirstRunOnboarding() {
+  const settings = readSettings();
+  if (settings.onboardingSeen) return;
+  writeSettings({ onboardingSeen: true });
+  dialog.showMessageBox({
+    type: 'info',
+    buttons: ['Open Screen Settings', 'Start Using'],
+    defaultId: 1,
+    cancelId: 1,
+    message: "Welcome to Jack's Quick Grab",
+    detail: [
+      'Use the menu bar icon for region, window, full-screen, delayed, and repeat-region captures.',
+      'Use the editor sidebar for history, search, pins, rename, reveal, and delete.',
+      'Enable Screen Recording permission if captures show only the desktop background.',
+    ].join('\n\n'),
+  }).then(({ response }) => {
+    if (response === 0) shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+  }).catch(() => {});
+}
+
 // ── Capture flow ──────────────────────────────────────────────────────────────
 
 async function triggerCapture(mode) {
@@ -174,20 +280,32 @@ async function triggerCapture(mode) {
   }
 }
 
+function finishCapture(dataURL, rect = null) {
+  const { filePath } = autoSave(dataURL);
+  if (readSettings().autoCopyAfterCapture) {
+    try { clipboard.writeImage(nativeImage.createFromDataURL(dataURL)); } catch {}
+  }
+  openEditor(dataURL, rect, filePath);
+}
+
+async function delayedCapture(mode, ms) {
+  if (hudWindow && !hudWindow.isDestroyed()) hudWindow.hide();
+  await delay(ms);
+  return triggerCapture(mode);
+}
+
 async function captureFullScreen() {
   let dataURL = await capturePrimaryScreen();
   if (!dataURL) dataURL = await runScreencapture(['-x']);
   if (!dataURL) { showHUD(); return; }
-  const { filePath } = autoSave(dataURL);
-  openEditor(dataURL, null, filePath);
+  finishCapture(dataURL);
 }
 
 async function captureActiveWindow() {
   let dataURL = await captureWindowFromPicker();
   if (!dataURL) dataURL = await runScreencapture(['-W', '-x']);
   if (!dataURL) { showHUD(); return; }
-  const { filePath } = autoSave(dataURL);
-  openEditor(dataURL, null, filePath);
+  finishCapture(dataURL);
 }
 
 async function captureWindowFromPicker() {
@@ -202,15 +320,73 @@ async function captureWindowFromPicker() {
     .slice(0, 9);
   if (!windows.length) return null;
 
-  const buttons = windows.map(w => w.name || 'Untitled Window').concat('Cancel');
-  const { response } = await dialog.showMessageBox({
-    type: 'question',
-    message: 'Choose a window to capture',
-    buttons,
-    cancelId: buttons.length - 1,
+  const pickedId = await new Promise(resolve => {
+    let settled = false;
+    windowPickerWin = new BrowserWindow({
+      width: 760, height: 620,
+      show: false,
+      acceptFirstMouse: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+      resizable: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    const cleanup = result => {
+      if (settled) return;
+      settled = true;
+      ipcMain.removeListener('window-pick', onPick);
+      ipcMain.removeListener('window-cancel', onCancel);
+      const win = windowPickerWin;
+      windowPickerWin = null;
+      if (win && !win.isDestroyed()) win.close();
+      resolve(result);
+    };
+    const onPick = (_e, id) => cleanup(id);
+    const onCancel = () => cleanup(null);
+    ipcMain.once('window-pick', onPick);
+    ipcMain.once('window-cancel', onCancel);
+    windowPickerWin.on('closed', () => {
+      if (windowPickerWin) cleanup(null);
+    });
+    windowPickerWin.loadFile(path.join(__dirname, 'src', 'window-picker.html'));
+    windowPickerWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    windowPickerWin.setAlwaysOnTop(true, 'screen-saver');
+    windowPickerWin.webContents.once('did-finish-load', () => {
+      windowPickerWin.webContents.send('window-sources', windows.map(w => ({
+        id: w.id,
+        name: w.name,
+        thumb: w.thumbnail.toDataURL(),
+      })));
+      if (process.platform === 'darwin') app.focus({ steal: true });
+      windowPickerWin.show();
+      windowPickerWin.moveTop();
+      windowPickerWin.setAlwaysOnTop(true, 'screen-saver');
+      windowPickerWin.focus();
+    });
   });
-  if (response >= windows.length) return null;
-  return windows[response].thumbnail.toDataURL();
+  const picked = windows.find(w => w.id === pickedId);
+  return picked ? picked.thumbnail.toDataURL() : null;
+}
+
+async function captureLastRegion() {
+  if (!lastRegionRect) return;
+  if (hudWindow && !hudWindow.isDestroyed()) hudWindow.hide();
+  await delay(120);
+  const dataURL = await capturePrimaryScreen();
+  if (!dataURL) { showHUD(); return; }
+  const img = nativeImage.createFromDataURL(dataURL);
+  const cropped = img.crop({
+    x: Math.max(0, Math.round(lastRegionRect.x)),
+    y: Math.max(0, Math.round(lastRegionRect.y)),
+    width: Math.max(1, Math.round(lastRegionRect.w)),
+    height: Math.max(1, Math.round(lastRegionRect.h)),
+  }).toDataURL();
+  finishCapture(cropped, lastRegionRect);
 }
 
 async function openRegionOverlay() {
@@ -223,6 +399,8 @@ async function openRegionOverlay() {
   captureWin = new BrowserWindow({
     width: bounds.width, height: bounds.height,
     x: bounds.x, y: bounds.y,
+    show: false,
+    acceptFirstMouse: true,
     frame: false, transparent: false,
     alwaysOnTop: true, resizable: false, movable: false,
     skipTaskbar: true, enableLargerThanScreen: true,
@@ -230,6 +408,17 @@ async function openRegionOverlay() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true, nodeIntegration: false,
     },
+  });
+  const showCaptureWin = () => {
+    if (!captureWin || captureWin.isDestroyed()) return;
+    if (process.platform === 'darwin') app.focus({ steal: true });
+    captureWin.show();
+    captureWin.moveTop();
+    captureWin.focus();
+  };
+  ipcMain.once('capture-ready', showCaptureWin);
+  captureWin.on('closed', () => {
+    ipcMain.removeListener('capture-ready', showCaptureWin);
   });
   captureWin.loadFile(path.join(__dirname, 'src', 'capture.html'));
   captureWin.setVisibleOnAllWorkspaces(true);
@@ -282,10 +471,28 @@ function openEditor(imageDataURL, rect, savedFilePath) {
 
 ipcMain.on('hud-capture', (_e, mode) => triggerCapture(mode));
 
+ipcMain.handle('shortcuts-get', () => ({
+  defaults: DEFAULT_SHORTCUTS,
+  shortcuts: readShortcuts(),
+}));
+
+ipcMain.handle('shortcuts-set', (_e, shortcuts) => {
+  const cleaned = {};
+  Object.keys(DEFAULT_SHORTCUTS).forEach(kind => {
+    const value = String(shortcuts?.[kind] || '').trim();
+    cleaned[kind] = value || DEFAULT_SHORTCUTS[kind];
+  });
+  writeSettings({ shortcuts: cleaned });
+  const failures = registerCaptureShortcuts();
+  if (tray) tray.setContextMenu(buildTrayMenu());
+  return { success: failures.length === 0, shortcuts: readShortcuts(), failures };
+});
+
 ipcMain.on('capture-done', (_e, { imageDataURL, rect }) => {
   closeCaptureWin();
-  const { filePath } = autoSave(imageDataURL);
-  openEditor(imageDataURL, rect, filePath);
+  if (rect) lastRegionRect = rect;
+  finishCapture(imageDataURL, rect);
+  if (tray) tray.setContextMenu(buildTrayMenu());
 });
 
 ipcMain.on('capture-cancel', () => {
@@ -311,6 +518,37 @@ ipcMain.handle('editor-save', async (_e, { imageDataURL, defaultName }) => {
     return { success: true, filePath };
   }
   return { success: false };
+});
+
+ipcMain.handle('share-image', async (_e, { imageDataURL, filename }) => {
+  try {
+    const filePath = writeDataURLTemp(imageDataURL, /\.jpe?g$/i.test(filename || '') ? 'jpg' : 'png');
+    clipboard.writeImage(nativeImage.createFromPath(filePath));
+    shell.showItemInFolder(filePath);
+    return { success: true, filePath };
+  } catch { return { success: false }; }
+});
+
+ipcMain.handle('ocr-image', async (_e, { imageDataURL }) => {
+  const tmp = writeDataURLTemp(imageDataURL, 'png');
+  try {
+    const script = ocrScriptPath();
+    if (!fs.existsSync(script)) return { success: false, error: 'OCR helper missing' };
+    const out = await new Promise((resolve, reject) => {
+      execFile('/usr/bin/swift', [script, tmp], {
+        maxBuffer: 1024 * 1024 * 8,
+        env: { ...process.env, CLANG_MODULE_CACHE_PATH: path.join(os.tmpdir(), 'jqg-swift-cache') },
+      }, (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr || err.message));
+        else resolve(stdout);
+      });
+    });
+    return { success: true, items: JSON.parse(out || '[]') };
+  } catch (err) {
+    return { success: false, error: err.message };
+  } finally {
+    try { fs.unlinkSync(tmp); } catch {}
+  }
 });
 
 ipcMain.on('editor-close', () => {
@@ -422,8 +660,10 @@ ipcMain.on('annotation-save', (_e, { filePath, anns, canvasSize }) => {
 
 ipcMain.on('ondragstart', (event, filePath) => {
   try {
-    const icon = nativeImage.createFromPath(filePath).resize({ width: 64, height: 64 });
-    event.sender.startDrag({ file: filePath, icon });
+    const safePath = safeCapturePath(filePath);
+    if (!safePath) return;
+    const icon = nativeImage.createFromPath(safePath).resize({ width: 64, height: 64 });
+    event.sender.startDrag({ file: safePath, icon });
   } catch {}
 });
 
@@ -455,13 +695,12 @@ app.whenReady().then(() => {
   fs.mkdirSync(SAVE_DIR, { recursive: true });
   fs.mkdirSync(ANNOTATION_DIR, { recursive: true });
   migrateLegacyAnnotations();
+  showFirstRunOnboarding();
   maybeShowScreenPermissionHelp();
   if (process.platform === 'darwin') app.dock.hide();
   createTray();
   createHUD();
-  globalShortcut.register('CommandOrControl+Shift+4', () => triggerCapture('region'));
-  globalShortcut.register('CommandOrControl+Shift+3', () => triggerCapture('full'));
-  globalShortcut.register('CommandOrControl+Shift+W', () => triggerCapture('window'));
+  registerCaptureShortcuts();
 });
 
 app.on('window-all-closed', e => e.preventDefault());

@@ -42,6 +42,7 @@ let bgImage = null;
 let sel = null;
 let dragging = false;
 let sx = 0, sy = 0;
+let pointerId = null;
 
 function resize() {
   canvas.width  = window.innerWidth;
@@ -122,20 +123,26 @@ function draw() {
   ctx.fillText(badge, bx + 10, by + 15);
 }
 
-canvas.addEventListener('mousedown', e => {
+canvas.addEventListener('pointerdown', e => {
+  if (!bgImage || e.button !== 0) return;
+  canvas.setPointerCapture?.(e.pointerId);
+  pointerId = e.pointerId;
   sx = e.clientX; sy = e.clientY;
   dragging = true;
   sel = { x: sx, y: sy, w: 0, h: 0 };
 });
 
-canvas.addEventListener('mousemove', e => {
+canvas.addEventListener('pointermove', e => {
   if (!dragging) return;
   sel = { x: sx, y: sy, w: e.clientX - sx, h: e.clientY - sy };
   draw();
 });
 
-canvas.addEventListener('mouseup', () => {
+canvas.addEventListener('pointerup', e => {
   if (!dragging) return;
+  if (pointerId !== null && e.pointerId !== pointerId) return;
+  canvas.releasePointerCapture?.(e.pointerId);
+  pointerId = null;
   dragging = false;
 
   const { x, y, w, h } = normalise(sel);
@@ -160,6 +167,14 @@ canvas.addEventListener('mouseup', () => {
   }
 });
 
+canvas.addEventListener('pointercancel', e => {
+  if (pointerId !== null && e.pointerId !== pointerId) return;
+  pointerId = null;
+  dragging = false;
+  sel = null;
+  draw();
+});
+
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (window.electronAPI) window.electronAPI.captureCancel();
@@ -180,7 +195,11 @@ window.addEventListener('resize', resize);
 if (window.electronAPI) {
   window.electronAPI.onScreenImage(dataURL => {
     const img = new Image();
-    img.onload = () => { bgImage = img; draw(); };
+    img.onload = () => {
+      bgImage = img;
+      draw();
+      window.electronAPI.captureReady?.();
+    };
     img.src = dataURL;
   });
 }

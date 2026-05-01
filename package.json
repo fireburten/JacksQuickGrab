@@ -22,6 +22,7 @@
       "preload.cjs",
       "package.json",
       "logo.png",
+      "scripts/**/*",
       "src/**/*"
     ],
     "mac": {

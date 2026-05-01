@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  min-height: 100%; background:#0e0a1f; color:#fff;
+  font-family:Poppins,system-ui,-apple-system,sans-serif; overflow:hidden;
+}
+.titlebar { height:30px; -webkit-app-region:drag; }
+.wrap { padding: 10px 14px 16px; }
+.head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+h1 { font-size:14px; font-weight:700; color:rgba(255,255,255,.82); }
+button {
+  border:0; border-radius:7px; background:rgba(255,255,255,.07);
+  color:rgba(255,255,255,.65); padding:7px 11px; font:600 11px inherit;
+  cursor:pointer; -webkit-app-region:no-drag;
+}
+button:hover { background:rgba(108,78,246,.26); color:#fff; }
+.grid {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
+  max-height:520px; overflow:auto; padding-right:2px;
+}
+.card {
+  border:2px solid rgba(255,255,255,.07); border-radius:8px; overflow:hidden;
+  background:rgba(255,255,255,.04); cursor:pointer; -webkit-app-region:no-drag;
+}
+.card:hover { border-color:#6C4EF6; background:rgba(108,78,246,.12); }
+.thumb { width:100%; aspect-ratio:16/10; object-fit:cover; display:block; background:#060412; }
+.name {
+  padding:7px 8px; font-size:10px; color:rgba(255,255,255,.58);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+</style>
+</head>
+<body>
+<div class="titlebar"></div>
+<div class="wrap">
+  <div class="head">
+    <h1>Choose a window</h1>
+    <button id="cancel">Cancel</button>
+  </div>
+  <div class="grid" id="grid"></div>
+</div>
+<script>
+const grid = document.getElementById('grid');
+document.getElementById('cancel').addEventListener('click', () => window.electronAPI?.windowCancel());
+
+window.electronAPI?.onWindowSources(sources => {
+  grid.innerHTML = '';
+  sources.forEach(source => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<img class="thumb" src="${source.thumb}"><div class="name"></div>`;
+    card.querySelector('.name').textContent = source.name || 'Untitled Window';
+    card.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      window.electronAPI.windowPick(source.id);
+    });
+    grid.appendChild(card);
+  });
+});
+</script>
+</body>
+</html>
