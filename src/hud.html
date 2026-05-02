@@ -23,6 +23,8 @@ body {
   box-shadow: 0 8px 32px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.07);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  -webkit-app-region: drag;
+  cursor: -webkit-grab;
 }
 .drag-handle {
   padding: 0 8px 0 2px;
@@ -30,8 +32,6 @@ body {
   margin-right: 4px;
   display: flex;
   align-items: center;
-  -webkit-app-region: drag;
-  cursor: -webkit-grab;
 }
 .drag-handle img {
   width: 34px;
@@ -59,6 +59,7 @@ body {
   font-family: inherit;
   color: inherit;
 }
+.mode-btn:disabled { cursor: default; }
 .mode-btn:hover:not(:disabled) { background: rgba(108,78,246,.25); }
 .mode-btn:disabled { opacity: 0.35; cursor: default; }
 .mode-btn .ic { font-size: 17px; line-height: 1; color: rgba(255,255,255,.6); }
@@ -68,6 +69,28 @@ body {
 .mode-btn.flash { background: #6C4EF6 !important; }
 .mode-btn.flash .ic, .mode-btn.flash .lbl { color: #fff !important; }
 .sep { width: 1px; height: 34px; background: rgba(255,255,255,.08); margin: 0 4px; flex-shrink: 0; }
+.rec-bar {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: no-drag;
+}
+.rec-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #ef4444; flex-shrink: 0;
+  animation: blink 1s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+.rec-timer {
+  font-size: 14px; font-weight: 600; color: #fff;
+  font-variant-numeric: tabular-nums; min-width: 38px;
+}
+.rec-stop {
+  padding: 6px 14px; border-radius: 12px; border: none;
+  background: #ef4444; color: #fff; font: 600 12px inherit;
+  cursor: pointer !important; -webkit-app-region: no-drag;
+}
+.rec-stop:hover { background: #dc2626; }
 .hist-btn {
   display: flex;
   flex-direction: column;
@@ -77,7 +100,7 @@ body {
   border-radius: 12px;
   border: none;
   background: transparent;
-  cursor: pointer;
+  cursor: pointer !important;
   -webkit-app-region: no-drag;
   font-family: inherit;
 }
@@ -105,7 +128,7 @@ body {
   <button class="mode-btn" data-mode="scroll" title="Scrolling capture (coming soon)" disabled>
     <span class="ic">↕</span><span class="lbl">Scroll</span>
   </button>
-  <button class="mode-btn" data-mode="record" title="Record screen (coming soon)" disabled>
+  <button class="mode-btn" data-mode="record" title="Record screen">
     <span class="ic">⏺</span><span class="lbl">Record</span>
   </button>
   <button class="mode-btn" data-mode="gif" title="Record GIF (coming soon)" disabled>
@@ -117,15 +140,114 @@ body {
   <button class="hist-btn" title="Capture history">
     <span class="ic">▤</span><span class="lbl">History</span>
   </button>
+
+  <div class="rec-bar" id="rec-bar">
+    <span class="rec-dot"></span>
+    <span class="rec-timer" id="rec-timer">0:00</span>
+    <button class="rec-stop" id="btn-stop-rec">■ Stop</button>
+  </div>
 </div>
 
 <script>
-document.querySelectorAll('.mode-btn:not(:disabled)').forEach(btn => {
+// ── Capture buttons ───────────────────────────────────────────────────────────
+document.querySelectorAll('.mode-btn:not(:disabled):not([data-mode="record"])').forEach(btn => {
   btn.addEventListener('click', () => {
     btn.classList.add('flash');
     setTimeout(() => btn.classList.remove('flash'), 600);
     if (window.electronAPI) window.electronAPI.hudCapture(btn.dataset.mode);
   });
+});
+
+// ── History ───────────────────────────────────────────────────────────────────
+document.querySelector('.hist-btn').addEventListener('click', () => {
+  if (window.electronAPI) window.electronAPI.hudHistory();
+});
+
+// ── Screen recording ──────────────────────────────────────────────────────────
+let mediaRecorder = null;
+let recChunks     = [];
+let recInterval   = null;
+let recSecs       = 0;
+let recDrawing    = false;
+
+const recBar   = document.getElementById('rec-bar');
+const recTimer = document.getElementById('rec-timer');
+
+function setRecordingUI(on) {
+  recBar.style.display = on ? 'flex' : 'none';
+  document.querySelectorAll('.mode-btn, .sep, .hist-btn')
+    .forEach(el => el.style.display = on ? 'none' : '');
+}
+
+function tickTimer() {
+  recSecs++;
+  const m = Math.floor(recSecs / 60), s = recSecs % 60;
+  recTimer.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// Record button → open region overlay in main
+document.querySelector('[data-mode="record"]').addEventListener('click', () => {
+  if (window.electronAPI) window.electronAPI.hudCapture('record');
+});
+
+// Main sends back the selected rect after user draws on the overlay
+if (window.electronAPI) {
+  window.electronAPI.onRecordingRegion(async ({ x, y, w, h, displayW, displayH }) => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
+      await new Promise(resolve => { video.onloadedmetadata = resolve; });
+      await video.play();
+
+      // Map logical rect coords → video pixel coords
+      const sx = video.videoWidth  / displayW;
+      const sy = video.videoHeight / displayH;
+      const cropX = Math.round(x * sx), cropY = Math.round(y * sy);
+      const cropW = Math.round(w * sx), cropH = Math.round(h * sy);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = cropW; canvas.height = cropH;
+      const ctx = canvas.getContext('2d');
+
+      recDrawing = true;
+      (function draw() {
+        if (!recDrawing) return;
+        ctx.drawImage(video, -cropX, -cropY, video.videoWidth, video.videoHeight);
+        requestAnimationFrame(draw);
+      })();
+
+      const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
+      const ext      = mimeType === 'video/mp4' ? 'mp4' : 'webm';
+      mediaRecorder  = new MediaRecorder(canvas.captureStream(30), { mimeType });
+      recChunks = [];
+
+      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+      mediaRecorder.onstop = async () => {
+        recDrawing = false;
+        stream.getTracks().forEach(t => t.stop());
+        const blob   = new Blob(recChunks, { type: mimeType });
+        const buffer = await blob.arrayBuffer();
+        await window.electronAPI.saveRecording(buffer, ext);
+      };
+
+      mediaRecorder.start(1000);
+      recSecs = 0; recTimer.textContent = '0:00';
+      recInterval = setInterval(tickTimer, 1000);
+      setRecordingUI(true);
+    } catch (err) {
+      console.error('Recording failed:', err);
+    }
+  });
+}
+
+document.getElementById('btn-stop-rec').addEventListener('click', () => {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  clearInterval(recInterval);
+  setRecordingUI(false);
+  if (window.electronAPI) window.electronAPI.recordingStopped();
 });
 </script>
 </body>

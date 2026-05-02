@@ -15,6 +15,7 @@ let editorWin  = null;
 let tray       = null;
 let windowPickerWin = null;
 let lastRegionRect = null;
+let recordingMode  = false;
 
 const SAVE_DIR = path.join(os.homedir(), 'Documents', "Jack's Quick Grab");
 const ANNOTATION_DIR = path.join(SAVE_DIR, '.annotations');
@@ -67,6 +68,11 @@ function annotationPathFor(filePath) {
   return path.join(ANNOTATION_DIR, base);
 }
 
+function flatAnnotationPathFor(filePath) {
+  const base = path.basename(filePath).replace(/\.(png|jpg|jpeg)$/i, '.flat.png');
+  return path.join(ANNOTATION_DIR, base);
+}
+
 function legacyAnnotationPathFor(filePath) {
   return filePath.replace(/\.(png|jpg|jpeg)$/i, '.json');
 }
@@ -92,6 +98,7 @@ function galleryPayload(filePath) {
     thumb: thumb.toDataURL(),
     annotations,
     canvasSize,
+    flatPath: fs.existsSync(flatAnnotationPathFor(filePath)) ? flatAnnotationPathFor(filePath) : null,
   };
 }
 
@@ -191,6 +198,12 @@ function createHUD() {
   hudWindow.loadFile(path.join(__dirname, 'src', 'hud.html'));
   hudWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   hudWindow.setAlwaysOnTop(true, 'floating');
+
+  // Auto-grant display media for screen recording from the HUD
+  hudWindow.webContents.session.setDisplayMediaRequestHandler(async (_request, callback) => {
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+    callback({ video: sources[0] });
+  });
 }
 
 function toggleHUD() {
@@ -215,16 +228,66 @@ async function runScreencapture(flags) {
 
 async function capturePrimaryScreen() {
   const primary = screen.getPrimaryDisplay();
+  const payload = await captureDisplayPayload(primary);
+  return payload?.screens?.[0]?.dataURL || null;
+}
+
+async function captureDisplayPayload(display) {
   const size = {
-    width: Math.round(primary.size.width * primary.scaleFactor),
-    height: Math.round(primary.size.height * primary.scaleFactor),
+    width: Math.round(display.size.width * display.scaleFactor),
+    height: Math.round(display.size.height * display.scaleFactor),
   };
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
     thumbnailSize: size,
   });
-  const source = sources.find(s => String(s.display_id) === String(primary.id)) || sources[0];
-  return source?.thumbnail && !source.thumbnail.isEmpty() ? source.thumbnail.toDataURL() : null;
+  const source = sources.find(s => String(s.display_id) === String(display.id)) || sources[0];
+  if (!source?.thumbnail || source.thumbnail.isEmpty()) return null;
+  return {
+    type: 'single-screen',
+    bounds: display.bounds,
+    screens: [{
+      dataURL: source.thumbnail.toDataURL(),
+      bounds: display.bounds,
+      scaleFactor: display.scaleFactor,
+    }],
+  };
+}
+
+function unionDisplayBounds(displays) {
+  const left = Math.min(...displays.map(d => d.bounds.x));
+  const top = Math.min(...displays.map(d => d.bounds.y));
+  const right = Math.max(...displays.map(d => d.bounds.x + d.bounds.width));
+  const bottom = Math.max(...displays.map(d => d.bounds.y + d.bounds.height));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+async function captureAllScreensPayload() {
+  const displays = screen.getAllDisplays();
+  if (displays.length === 1) {
+    return captureDisplayPayload(displays[0]);
+  }
+  const maxW = Math.max(...displays.map(d => Math.round(d.size.width * d.scaleFactor)));
+  const maxH = Math.max(...displays.map(d => Math.round(d.size.height * d.scaleFactor)));
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: maxW, height: maxH },
+  });
+  const screens = displays.map((display, index) => {
+    const source = sources.find(s => String(s.display_id) === String(display.id)) || sources[index];
+    if (!source?.thumbnail || source.thumbnail.isEmpty()) return null;
+    return {
+      dataURL: source.thumbnail.toDataURL(),
+      bounds: display.bounds,
+      scaleFactor: display.scaleFactor,
+    };
+  }).filter(Boolean);
+  if (!screens.length) return null;
+  return {
+    type: 'multi-screen',
+    bounds: unionDisplayBounds(displays),
+    screens,
+  };
 }
 
 function maybeShowScreenPermissionHelp() {
@@ -390,18 +453,17 @@ async function captureLastRegion() {
 }
 
 async function openRegionOverlay() {
-  // Take a silent full-screen grab, then show our region-selection overlay on top
-  let dataURL = await capturePrimaryScreen();
-  if (!dataURL) dataURL = await runScreencapture(['-x']);
-  if (!dataURL) { showHUD(); return; }
-
-  const { bounds } = screen.getPrimaryDisplay();
+  // Start capture first so the overlay does not appear in its own screenshot.
+  const cursor = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursor);
+  const bounds = display.bounds;
+  const payloadPromise = captureDisplayPayload(display);
   captureWin = new BrowserWindow({
     width: bounds.width, height: bounds.height,
     x: bounds.x, y: bounds.y,
     show: false,
     acceptFirstMouse: true,
-    frame: false, transparent: false,
+    frame: false, transparent: true, backgroundColor: '#00000000',
     alwaysOnTop: true, resizable: false, movable: false,
     skipTaskbar: true, enableLargerThanScreen: true,
     webPreferences: {
@@ -424,7 +486,16 @@ async function openRegionOverlay() {
   captureWin.setVisibleOnAllWorkspaces(true);
   captureWin.setAlwaysOnTop(true, 'screen-saver');
   captureWin.webContents.once('did-finish-load', () => {
-    captureWin.webContents.send('screen-image', dataURL);
+    showCaptureWin();
+    payloadPromise.then(async payload => {
+      if (!payload) {
+        const dataURL = await runScreencapture(['-x']);
+        if (!dataURL) { showHUD(); return; }
+        const primary = screen.getPrimaryDisplay();
+        payload = { type: 'single-screen', bounds: primary.bounds, screens: [{ dataURL, bounds: primary.bounds, scaleFactor: 1 }] };
+      }
+      if (captureWin && !captureWin.isDestroyed()) captureWin.webContents.send('screen-image', payload);
+    }).catch(() => showHUD());
   });
 }
 
@@ -469,7 +540,36 @@ function openEditor(imageDataURL, rect, savedFilePath) {
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 
-ipcMain.on('hud-capture', (_e, mode) => triggerCapture(mode));
+ipcMain.on('hud-capture', (_e, mode) => {
+  if (mode === 'record') { recordingMode = true; triggerCapture('region'); }
+  else triggerCapture(mode);
+});
+
+ipcMain.on('hud-history', () => {
+  if (editorWin && !editorWin.isDestroyed()) { editorWin.focus(); return; }
+  editorWin = new BrowserWindow({
+    width: 1100, height: 760, minWidth: 700, minHeight: 520,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
+  });
+  editorWin.loadFile(path.join(__dirname, 'src', 'editor.html'));
+  editorWin.on('closed', () => { editorWin = null; showHUD(); });
+});
+
+ipcMain.handle('save-recording', async (_e, buffer, ext) => {
+  const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+  const filename = `recording-${ts}.${ext}`;
+  const filePath = path.join(SAVE_DIR, filename);
+  fs.mkdirSync(SAVE_DIR, { recursive: true });
+  fs.writeFileSync(filePath, Buffer.from(buffer));
+  shell.showItemInFolder(filePath);
+  return filePath;
+});
+
+ipcMain.on('recording-stopped', () => {
+  closeCaptureWin();
+  if (hudWindow && !hudWindow.isDestroyed()) hudWindow.setAlwaysOnTop(true, 'floating');
+});
 
 ipcMain.handle('shortcuts-get', () => ({
   defaults: DEFAULT_SHORTCUTS,
@@ -489,6 +589,31 @@ ipcMain.handle('shortcuts-set', (_e, shortcuts) => {
 });
 
 ipcMain.on('capture-done', (_e, { imageDataURL, rect }) => {
+  if (recordingMode) {
+    recordingMode = false;
+    if (rect) {
+      const display = screen.getPrimaryDisplay();
+      const sf = display.scaleFactor || 1;
+      const logicalRect = {
+        x: Math.round(rect.x / sf), y: Math.round(rect.y / sf),
+        w: Math.round(rect.w / sf), h: Math.round(rect.h / sf),
+        displayW: display.bounds.width, displayH: display.bounds.height,
+      };
+      // Keep capture overlay as a recording indicator; exclude it from the recording
+      // and raise the HUD above it so the timer is visible
+      if (captureWin && !captureWin.isDestroyed()) {
+        captureWin.setContentProtection(true);
+        captureWin.setIgnoreMouseEvents(true, { forward: true });
+        captureWin.webContents.send('recording-start', logicalRect);
+      }
+      if (hudWindow && !hudWindow.isDestroyed()) {
+        hudWindow.setAlwaysOnTop(true, 'screen-saver');
+        hudWindow.webContents.send('recording-region', logicalRect);
+      }
+    }
+    showHUD();
+    return;
+  }
   closeCaptureWin();
   if (rect) lastRegionRect = rect;
   finishCapture(imageDataURL, rect);
@@ -497,6 +622,7 @@ ipcMain.on('capture-done', (_e, { imageDataURL, rect }) => {
 
 ipcMain.on('capture-cancel', () => {
   closeCaptureWin();
+  recordingMode = false;
   showHUD();
 });
 
@@ -565,6 +691,11 @@ ipcMain.handle('app-info', () => ({
   version: app.getVersion(),
   packaged: app.isPackaged,
   appPath: app.getAppPath(),
+  execPath: process.execPath,
+  buildTime: (() => {
+    try { return fs.statSync(app.getAppPath()).mtime.toISOString(); }
+    catch { return null; }
+  })(),
 }));
 
 ipcMain.handle('permission-status', () => ({
@@ -606,7 +737,7 @@ ipcMain.handle('gallery-delete', async (_e, filePath) => {
     const safePath = safeCapturePath(filePath);
     if (!safePath || !fs.existsSync(safePath)) return { success: false };
     try { await shell.trashItem(safePath); } catch { fs.unlinkSync(safePath); }
-    [annotationPathFor(safePath), legacyAnnotationPathFor(safePath)].forEach(p => {
+    [annotationPathFor(safePath), flatAnnotationPathFor(safePath), legacyAnnotationPathFor(safePath)].forEach(p => {
       try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
     });
     return { success: true };
@@ -626,9 +757,12 @@ ipcMain.handle('gallery-rename', (_e, { filePath, name }) => {
       fs.renameSync(safePath, nextPath);
       const oldAnn = annotationPathFor(safePath);
       const newAnn = annotationPathFor(nextPath);
+      const oldFlat = flatAnnotationPathFor(safePath);
+      const newFlat = flatAnnotationPathFor(nextPath);
       const oldLegacy = legacyAnnotationPathFor(safePath);
       if (fs.existsSync(oldAnn)) fs.renameSync(oldAnn, newAnn);
       else if (fs.existsSync(oldLegacy)) fs.renameSync(oldLegacy, newAnn);
+      if (fs.existsSync(oldFlat)) fs.renameSync(oldFlat, newFlat);
     }
     return { success: true, item: galleryPayload(nextPath) };
   } catch { return { success: false }; }
@@ -650,12 +784,26 @@ ipcMain.handle('clipboard-image', () => {
   } catch { return null; }
 });
 
-ipcMain.on('annotation-save', (_e, { filePath, anns, canvasSize }) => {
+function writeAnnotationBundle({ filePath, anns, canvasSize, flatDataURL }) {
   try {
     fs.mkdirSync(ANNOTATION_DIR, { recursive: true });
     const annPath = annotationPathFor(filePath);
     fs.writeFileSync(annPath, JSON.stringify({ anns, canvasSize }));
-  } catch {}
+    if (flatDataURL) {
+      const flatPath = flatAnnotationPathFor(filePath);
+      const data = flatDataURL.replace(/^data:image\/\w+;base64,/, '');
+      fs.writeFileSync(flatPath, Buffer.from(data, 'base64'));
+    }
+    return true;
+  } catch { return false; }
+}
+
+ipcMain.on('annotation-save', (_e, data) => {
+  writeAnnotationBundle(data);
+});
+
+ipcMain.handle('annotation-save-now', (_e, data) => {
+  return { success: writeAnnotationBundle(data) };
 });
 
 ipcMain.on('ondragstart', (event, filePath) => {
@@ -667,13 +815,25 @@ ipcMain.on('ondragstart', (event, filePath) => {
   } catch {}
 });
 
-ipcMain.on('ondragstart-composite', (event, { filePath, compositeDataURL }) => {
+ipcMain.on('ondragstart-composite', (event, { filePath, compositeDataURL, filename }) => {
   try {
-    const tmp  = path.join(os.tmpdir(), `jqg-export-${Date.now()}.png`);
+    const safeName = safeCaptureName(filename || path.basename(filePath || ''), '.png');
+    const tmp  = path.join(os.tmpdir(), `jqg-export-${Date.now()}-${safeName}`);
     const data = compositeDataURL.replace(/^data:image\/\w+;base64,/, '');
     fs.writeFileSync(tmp, Buffer.from(data, 'base64'));
     const icon = nativeImage.createFromPath(tmp).resize({ width: 64, height: 64 });
     event.sender.startDrag({ file: tmp, icon });
+  } catch {}
+});
+
+ipcMain.on('ondragstart-annotated', (event, filePath) => {
+  try {
+    const safePath = safeCapturePath(filePath);
+    if (!safePath) return;
+    const flatPath = flatAnnotationPathFor(safePath);
+    const dragPath = fs.existsSync(flatPath) ? flatPath : safePath;
+    const icon = nativeImage.createFromPath(dragPath).resize({ width: 64, height: 64 });
+    event.sender.startDrag({ file: dragPath, icon });
   } catch {}
 });
 

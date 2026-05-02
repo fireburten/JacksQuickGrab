@@ -2,7 +2,12 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // HUD → Main
-  hudCapture: (mode) => ipcRenderer.send('hud-capture', mode),
+  hudCapture:      (mode)       => ipcRenderer.send('hud-capture', mode),
+  hudHistory:      ()           => ipcRenderer.send('hud-history'),
+  saveRecording:      (buf, ext) => ipcRenderer.invoke('save-recording', buf, ext),
+  onRecordingRegion:  (cb)  => ipcRenderer.on('recording-region', (_e, data) => cb(data)),
+  onRecordingStart:   (cb)  => ipcRenderer.on('recording-start',  (_e, data) => cb(data)),
+  recordingStopped:   ()    => ipcRenderer.send('recording-stopped'),
 
   // Capture overlay → Main
   captureDone: (data) => ipcRenderer.send('capture-done', data),
@@ -27,6 +32,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ocrImage:        (data)     => ipcRenderer.invoke('ocr-image', data),
   editorClose:     ()         => ipcRenderer.send('editor-close'),
   annotationSave:  (data)     => ipcRenderer.send('annotation-save', data),
+  annotationSaveNow: (data)   => ipcRenderer.invoke('annotation-save-now', data),
   loadImageFile:   (filePath) => ipcRenderer.invoke('image-load-file', filePath),
   clipboardImage:  ()         => ipcRenderer.invoke('clipboard-image'),
   getPathForFile:  (file)     => webUtils.getPathForFile(file),
@@ -45,4 +51,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   galleryOpenFolder: ()         => ipcRenderer.send('gallery-open-folder'),
   startDrag:          (filePath)  => ipcRenderer.send('ondragstart', filePath),
   startDragComposite: (data)      => ipcRenderer.send('ondragstart-composite', data),
+  startDragAnnotated: (filePath)  => ipcRenderer.send('ondragstart-annotated', filePath),
 });

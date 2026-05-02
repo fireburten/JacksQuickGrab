@@ -10,9 +10,26 @@ html, body {
   font-family: 'Poppins', system-ui, sans-serif;
   overflow: hidden; display: flex; flex-direction: column; color: #fff;
 }
-.titlebar { height: 30px; flex-shrink: 0; -webkit-app-region: drag; }
+.titlebar { height: 30px; flex-shrink: 0; -webkit-app-region: drag; order: 0; }
 
-.main-area { flex: 1; min-height: 0; display: flex; }
+.main-area { flex: 1; min-height: 0; display: flex; order: 2; }
+
+/* ── Panel position toggles ── */
+.toolbar { order: 3; }
+.toolbar.pos-top { order: 1; border-top: none; border-bottom: 1px solid rgba(255,255,255,.06); }
+.gallery-sidebar { order: 10; }
+.gallery-resizer  { order: 20; }
+.tool-sidebar     { order: 30; }
+.canvas-wrap      { order: 40; }
+.inspector        { order: 50; }
+.tool-sidebar.pos-right { order: 45; border-right: none; border-left: 1px solid rgba(255,255,255,.06); }
+.panel-toggle {
+  background: transparent; border: none; cursor: pointer;
+  color: rgba(255,255,255,.22); font-size: 13px; padding: 3px 5px;
+  border-radius: 6px; -webkit-app-region: no-drag; line-height: 1;
+  transition: color .15s, background .15s; flex-shrink: 0;
+}
+.panel-toggle:hover { color: rgba(255,255,255,.7); background: rgba(255,255,255,.07); }
 
 /* ── Gallery sidebar ── */
 .gallery-sidebar {
@@ -244,6 +261,22 @@ html, body {
   border-bottom: 2px solid rgba(255,255,255,.9);
 }
 
+/* ── Tool sidebar ── */
+.tool-sidebar {
+  width: 64px; flex-shrink: 0;
+  background: #060412; border-right: 1px solid rgba(255,255,255,.06);
+  display: flex; flex-direction: column; align-items: center;
+  padding: 8px 6px; gap: 2px;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-app-region: no-drag;
+}
+.tool-sidebar::-webkit-scrollbar { display: none; }
+.tool-sidebar .tbtn { width: 52px; min-width: unset; padding: 7px 6px; }
+.tool-sep { width: 40px; height: 1px; background: rgba(255,255,255,.08); margin: 4px 0; flex-shrink: 0; }
+.tool-sidebar .swatches { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 4px 2px; }
+.tool-sidebar .stroke-wrap { width: 52px; padding: 4px 0; }
+.tool-sidebar .stroke-wrap input { width: 52px; }
+
 /* ── Toolbar ── */
 .toolbar {
   flex-shrink: 0; background: rgba(14,10,31,.98);
@@ -412,6 +445,35 @@ body.select-mode .select-hint { display: block; }
   </div>
   <div class="gallery-resizer" id="gallery-resizer"></div>
 
+  <div class="tool-sidebar">
+    <button class="tbtn" data-tool="select" title="Select / Move (S)"><span class="ic">↖</span><span class="lbl">Select</span></button>
+    <div class="tool-sep"></div>
+    <button class="tbtn active" data-tool="arrow" title="Arrow (A)"><span class="ic">↗</span><span class="lbl">Arrow</span></button>
+    <button class="tbtn" data-tool="text" title="Text (T)"><span class="ic">T</span><span class="lbl">Text</span></button>
+    <button class="tbtn" data-tool="box" title="Box (B)"><span class="ic">▭</span><span class="lbl">Box</span></button>
+    <button class="tbtn" data-tool="highlight" title="Highlight (H)"><span class="ic">▬</span><span class="lbl">High</span></button>
+    <button class="tbtn" data-tool="blur" title="Blur (R)"><span class="ic">≋</span><span class="lbl">Blur</span></button>
+    <button class="tbtn" data-tool="draw" title="Draw (D)"><span class="ic">✏</span><span class="lbl">Draw</span></button>
+    <div class="tool-sep"></div>
+    <div class="swatches">
+      <div class="sw on" data-c="#6C4EF6" style="background:#6C4EF6"></div>
+      <div class="sw"    data-c="#EF4444" style="background:#EF4444"></div>
+      <div class="sw"    data-c="#F59E0B" style="background:#F59E0B"></div>
+      <div class="sw"    data-c="#22C55E" style="background:#22C55E"></div>
+      <div class="sw"    data-c="#3B82F6" style="background:#3B82F6"></div>
+      <div class="sw"    data-c="#EC4899" style="background:#EC4899"></div>
+      <div class="sw"    data-c="#ffffff" style="background:#fff;border-color:rgba(255,255,255,.3)"></div>
+      <div class="sw"    data-c="#000000" style="background:#111"></div>
+    </div>
+    <div class="tool-sep"></div>
+    <div class="stroke-wrap">
+      <input type="range" id="sw-range" min="1" max="150" value="15">
+      <span>Stroke</span>
+    </div>
+    <div style="flex:1"></div>
+    <button class="panel-toggle" id="btn-toggle-tool-sidebar" title="Move tools left / right">⇄</button>
+  </div>
+
   <div class="canvas-wrap" id="cw">
     <canvas id="c"></canvas>
     <div class="canvas-resize-handle" id="canvas-resize-handle" title="Resize canvas"></div>
@@ -454,37 +516,7 @@ body.select-mode .select-hint { display: block; }
 
 <div class="toolbar">
   <div class="logo"><img src="../logo.png" alt="JQG"></div>
-
-  <button class="tbtn"        data-tool="select"    title="Select / Move (S)">  <span class="ic">↖</span><span class="lbl">Select</span></button>
-  <div class="sep"></div>
-  <button class="tbtn active" data-tool="arrow"     title="Arrow (A)">          <span class="ic">↗</span><span class="lbl">Arrow</span></button>
-  <button class="tbtn"        data-tool="text"      title="Text (T)">           <span class="ic">T</span> <span class="lbl">Text</span></button>
-  <button class="tbtn"        data-tool="box"       title="Box (B)">            <span class="ic">▭</span><span class="lbl">Box</span></button>
-  <button class="tbtn"        data-tool="highlight" title="Highlight (H)">      <span class="ic">▬</span><span class="lbl">Highlight</span></button>
-  <button class="tbtn"        data-tool="blur"      title="Blur / Redact (R)">  <span class="ic">≋</span><span class="lbl">Blur</span></button>
-  <button class="tbtn"        data-tool="draw"      title="Draw (D)">           <span class="ic">✏</span><span class="lbl">Draw</span></button>
-
-  <div class="sep"></div>
-
-  <div class="swatches">
-    <div class="sw on" data-c="#6C4EF6" style="background:#6C4EF6"></div>
-    <div class="sw"    data-c="#EF4444" style="background:#EF4444"></div>
-    <div class="sw"    data-c="#F59E0B" style="background:#F59E0B"></div>
-    <div class="sw"    data-c="#22C55E" style="background:#22C55E"></div>
-    <div class="sw"    data-c="#3B82F6" style="background:#3B82F6"></div>
-    <div class="sw"    data-c="#EC4899" style="background:#EC4899"></div>
-    <div class="sw"    data-c="#ffffff" style="background:#fff;border-color:rgba(255,255,255,.3)"></div>
-    <div class="sw"    data-c="#000000" style="background:#111"></div>
-  </div>
-
-  <div class="sep"></div>
-
-  <div class="stroke-wrap">
-    <input type="range" id="sw-range" min="1" max="150" value="15">
-    <span>Stroke</span>
-  </div>
-
-  <div class="sep"></div>
+  <button class="panel-toggle" id="btn-toggle-toolbar" title="Move toolbar top / bottom">⇅</button>
 
   <button class="abtn abtn-undo" id="btn-zoom-out" title="Zoom out">−</button>
   <div class="zoom-readout" id="zoom-readout">100%</div>
@@ -493,28 +525,28 @@ body.select-mode .select-hint { display: block; }
 
   <div class="sep"></div>
 
+  <button class="abtn abtn-undo" id="btn-undo">↩ Undo</button>
+  <button class="abtn abtn-undo" id="btn-redo">↪ Redo</button>
+
+  <div class="sep"></div>
+
+  <button class="abtn abtn-copy" id="btn-copy">📋 Copy</button>
+  <details class="toolbar-menu">
+    <summary>Export</summary>
+    <div class="menu-pop">
+      <button class="abtn abtn-copy"     id="btn-share">Share</button>
+      <button class="abtn abtn-save"     id="btn-save">Save PNG</button>
+      <button class="abtn abtn-original" id="btn-save-jpg">Save JPG</button>
+      <button class="abtn abtn-original" id="btn-copy-original">Copy Original</button>
+      <button class="abtn abtn-original" id="btn-save-original">Save Original</button>
+    </div>
+  </details>
   <details class="toolbar-menu">
     <summary>Presets</summary>
     <div class="menu-pop">
       <button class="abtn abtn-original" id="preset-purple">Purple Arrow</button>
       <button class="abtn abtn-original" id="preset-warn">Warning</button>
       <button class="abtn abtn-original" id="preset-redact">Redact Style</button>
-    </div>
-  </details>
-
-  <div class="sep"></div>
-
-  <button class="abtn abtn-undo"  id="btn-undo">↩ Undo</button>
-  <button class="abtn abtn-undo"  id="btn-redo">↪ Redo</button>
-  <button class="abtn abtn-copy"  id="btn-copy">📋 Copy Flat</button>
-  <details class="toolbar-menu">
-    <summary>Export</summary>
-    <div class="menu-pop">
-      <button class="abtn abtn-copy"  id="btn-share">Share</button>
-      <button class="abtn abtn-save"  id="btn-save">Save Flat PNG</button>
-      <button class="abtn abtn-original" id="btn-save-jpg">Save Flat JPG</button>
-      <button class="abtn abtn-original" id="btn-copy-original">Copy Original</button>
-      <button class="abtn abtn-original" id="btn-save-original">Save Original</button>
     </div>
   </details>
   <details class="toolbar-menu">
@@ -525,7 +557,7 @@ body.select-mode .select-hint { display: block; }
     </div>
   </details>
   <details class="toolbar-menu">
-    <summary>Tools</summary>
+    <summary>⚙︎</summary>
     <div class="menu-pop">
       <button class="abtn abtn-original" id="btn-ocr">Copy OCR Text</button>
       <button class="abtn abtn-original" id="btn-redact">Smart Redact</button>
@@ -693,6 +725,11 @@ function savePrefs(next) {
 
 function applyPrefs() {
   const prefs = getPrefs();
+  if (prefs.preset === 'redact' || Number(prefs.stroke) > 32) {
+    savePrefs({ color:'#6C4EF6', stroke:15, preset:'purple' });
+    prefs.color = '#6C4EF6';
+    prefs.stroke = 15;
+  }
   if (prefs.color) {
     color = prefs.color;
     document.querySelectorAll('.sw').forEach(x => x.classList.toggle('on', x.dataset.c === color));
@@ -712,7 +749,8 @@ function applyAnnotationPreset(name) {
   updateStrokeUI(p.stroke);
   document.querySelectorAll('.sw').forEach(x => x.classList.toggle('on', x.dataset.c === color));
   setTool(p.tool);
-  savePrefs({ color, stroke: sw, preset:name });
+  if (name === 'redact') savePrefs({ preset:name });
+  else savePrefs({ color, stroke: sw, preset:name });
   toast(`${name.charAt(0).toUpperCase()+name.slice(1)} preset`);
 }
 
@@ -792,16 +830,21 @@ async function warmGalleryComposite(item) {
   if (cached) return cached.promise;
   const cachedEntry={ dataURL:null, promise:null };
   const task=(async()=>{
-    const bg=await imageReady(item.fileURL || item.thumb);
+    const loaded=await window.electronAPI?.galleryLoad?.(item.filePath);
+    const sourceDataURL=loaded?.dataURL || item.thumb;
+    const annotations=Array.isArray(loaded?.anns)
+      ? loaded.anns
+      : (Array.isArray(item.annotations)?item.annotations:[]);
+    const canvasSize=loaded?.canvasSize || item.canvasSize || null;
+    const bg=await imageReady(sourceDataURL);
     if (!bg) return null;
-    const annotations=Array.isArray(item.annotations)?item.annotations:[];
     await Promise.all(annotations.filter(a=>a.type==='image'&&a.src).map(a=>imageReady(a.src).catch(()=>null)));
     const off=document.createElement('canvas');
-    off.width=item.canvasSize?.width || bg.naturalWidth;
-    off.height=item.canvasSize?.height || bg.naturalHeight;
+    off.width=canvasSize?.width || bg.naturalWidth;
+    off.height=canvasSize?.height || bg.naturalHeight;
     const oc=off.getContext('2d');
     oc.drawImage(bg,0,0);
-    annotations.forEach(a=>drawAnn(oc,a));
+    annotations.forEach(a=>drawAnn(oc,a,bg,off.width,off.height));
     cachedEntry.dataURL=off.toDataURL('image/png');
     return cachedEntry.dataURL;
   })();
@@ -817,6 +860,29 @@ function dataURLToFile(dataURL, filename) {
   const bytes=new Uint8Array(bin.length);
   for (let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
   return new File([bytes], filename, { type:mime });
+}
+
+function startExternalGalleryDrag(item) {
+  if (currentPath === item.filePath) {
+    window.electronAPI?.startDragComposite?.({filePath:item.filePath,compositeDataURL:compositeDataURL(),filename:item.filename});
+    return;
+  }
+  const hasAnnotations=Array.isArray(item.annotations)&&item.annotations.length;
+  const composite=galleryCompositeCache.get(item.filePath)?.dataURL;
+  if (item.flatPath) {
+    window.electronAPI?.startDragAnnotated?.(item.filePath);
+    return;
+  }
+  if (hasAnnotations && composite) {
+    window.electronAPI?.startDragComposite?.({filePath:item.filePath,compositeDataURL:composite,filename:item.filename});
+    return;
+  }
+  if (hasAnnotations) {
+    // Composite warm failed or wasn't ready — fall back to original file
+    window.electronAPI?.startDrag?.(item.filePath);
+    return;
+  }
+  window.electronAPI?.startDrag?.(item.filePath);
 }
 
 function readFileAsDataURL(file) {
@@ -1243,7 +1309,7 @@ function drawBlockArrow(c, x1, y1, x2, y2, sw) {
 }
 
 // drawAnn accepts a ctxArg so it can be called for offscreen compositing too
-function drawAnn(c, a) {
+function drawAnn(c, a, baseImage = bgImage, baseW = canvas.width, baseH = canvas.height) {
   c.save();
   const annOpacity = a.opacity ?? 1;
   c.globalAlpha = Math.min(1, annOpacity);
@@ -1297,9 +1363,9 @@ function drawAnn(c, a) {
     case 'blur': {
       const bx=a.w<0?a.x+a.w:a.x, by=a.h<0?a.y+a.h:a.y;
       const bw=Math.abs(a.w), bh=Math.abs(a.h);
-      if (bgImage) {
+      if (baseImage) {
         const off=document.createElement('canvas'); off.width=bw; off.height=bh;
-        const oc=off.getContext('2d'); oc.drawImage(bgImage,-bx,-by,canvas.width,canvas.height);
+        const oc=off.getContext('2d'); oc.drawImage(baseImage,-bx,-by,baseW,baseH);
         c.save(); c.filter=`blur(${Math.max(1,a.sw*2.5)}px)`;
         c.drawImage(off,bx,by,bw,bh); c.restore();
       }
@@ -1604,7 +1670,9 @@ function spawnTextInput(e,canvasPos,col,existingAnn,existingIdx) {
   document.body.appendChild(inp);
   inp.focus(); if (existingAnn) inp.select();
 
+  let committed=false;
   const done=()=>{
+    if (committed) return; committed=true;
     const txt=inp.value.trim();
     if (existingIdx!==null) {
       recordHistory();
@@ -1670,6 +1738,14 @@ function toast(msg) {
 }
 
 function flatDataURL() { return canvas.toDataURL('image/png'); }
+function compositeDataURL() {
+  const off=document.createElement('canvas');
+  off.width=canvas.width; off.height=canvas.height;
+  const oc=off.getContext('2d');
+  if (bgImage) oc.drawImage(bgImage,0,0);
+  anns.forEach(a=>drawAnn(oc,a,bgImage,off.width,off.height));
+  return off.toDataURL('image/png');
+}
 function flatJpegDataURL(quality=.9) {
   const off=document.createElement('canvas');
   off.width=canvas.width; off.height=canvas.height;
@@ -1904,7 +1980,19 @@ function saveAnns() {
       filePath: currentPath,
       anns,
       canvasSize: { width: canvas.width, height: canvas.height },
+      flatDataURL: compositeDataURL(),
     });
+}
+
+async function saveAnnsNow() {
+  if (!window.electronAPI?.annotationSaveNow || !currentPath) return false;
+  const r=await window.electronAPI.annotationSaveNow({
+    filePath: currentPath,
+    anns,
+    canvasSize: { width: canvas.width, height: canvas.height },
+    flatDataURL: compositeDataURL(),
+  });
+  return !!r?.success;
 }
 
 function getGalleryOrder() {
@@ -2479,8 +2567,8 @@ async function loadGallery() {
 
     const img=document.createElement('img');
     img.src=item.thumb;
-    img.draggable=true;
-    img.title='Drag to move to a project. Option-drag to another app.';
+    img.draggable=false;
+    img.title='Drag card to move. Drag ⇲ to export.';
 
     const lbl=document.createElement('div');
     lbl.className='gallery-item-name';
@@ -2490,6 +2578,7 @@ async function loadGallery() {
     actions.className='gallery-actions';
     [
       [pinned?'★':'☆','Pin',()=>togglePin(item.filePath),''],
+      ['⇲','Drag annotated image out',null,'export'],
       ['✎','Rename',()=>renameGalleryItem(item),''],
       ['↗','Reveal',()=>window.electronAPI.galleryReveal(item.filePath),''],
       ['×','Delete',()=>deleteGalleryItem(item),'danger'],
@@ -2497,7 +2586,23 @@ async function loadGallery() {
       const b=document.createElement('button');
       b.className='gallery-action '+cls;
       b.type='button'; b.textContent=txt; b.title=title;
-      b.addEventListener('click',e=>{e.stopPropagation(); fn();});
+    if (cls==='export') {
+      b.draggable=true;
+        b.addEventListener('mouseenter',()=>warmGalleryComposite(item).catch(()=>{}));
+        b.addEventListener('mousedown',()=>{
+          if (currentPath === item.filePath) saveAnnsNow().catch(()=>{});
+          warmGalleryComposite(item).catch(()=>{});
+        });
+        b.addEventListener('dragstart',e=>{
+          e.dataTransfer?.clearData?.();
+          e.preventDefault();
+          e.stopPropagation();
+          startExternalGalleryDrag(item);
+        });
+        b.addEventListener('click',e=>{e.stopPropagation(); toast('Drag this button to another app');});
+      } else {
+        b.addEventListener('click',e=>{e.stopPropagation(); fn();});
+      }
       actions.appendChild(b);
     });
 
@@ -2516,72 +2621,28 @@ async function loadGallery() {
     div.addEventListener('mouseenter',()=>warmGalleryComposite(item).catch(()=>{}));
     div.addEventListener('mousedown',()=>warmGalleryComposite(item).catch(()=>{}));
 
-    // Drag → canvas inserts this capture as a movable image annotation.
-    div.addEventListener('dragstart',e=>{
-      if (!selectedGalleryPaths.includes(item.filePath)) selectGalleryItem(item.filePath,e);
-      if (e.target === img && e.altKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        const hasAnnotations=Array.isArray(item.annotations)&&item.annotations.length;
-        const composite=galleryCompositeCache.get(item.filePath)?.dataURL;
-        if (hasAnnotations && composite) {
-          window.electronAPI?.startDragComposite?.({filePath:item.filePath,compositeDataURL:composite});
-        } else if (!hasAnnotations) {
-          window.electronAPI?.startDrag?.(item.filePath);
-        } else {
-          toast('Preparing annotated drag...');
-          warmGalleryComposite(item).then(()=>toast('Ready to drag')).catch(()=>toast('Could not prepare drag'));
-        }
-        return;
+    // Drag → native OS file drag (with annotations composited in).
+    // Sets galleryDragPath so project-row drops within the same window still work.
+    div.addEventListener('dragstart', async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!selectedGalleryPaths.includes(item.filePath)) selectGalleryItem(item.filePath, e);
+      galleryDragPath = item.filePath;
+      galleryDragPaths = galleryDragTargets(item.filePath);
+      // If the composite is still warming, wait for it (mouseenter/mousedown start it early)
+      const cached = galleryCompositeCache.get(item.filePath);
+      if (cached?.promise && !cached?.dataURL) {
+        try { await cached.promise; } catch {}
       }
-      const dragTargets=galleryDragTargets(item.filePath);
-      galleryDragPath=item.filePath;
-      galleryDragPaths=dragTargets;
-      e.dataTransfer.effectAllowed='copyMove';
-      e.dataTransfer.setData('application/x-jqg-gallery-file',item.filePath);
-      e.dataTransfer.setData('application/x-jqg-gallery-files',JSON.stringify(dragTargets));
-      e.dataTransfer.setData('application/x-jqg-gallery-reorder',item.filePath);
-      e.dataTransfer.setData('text/plain',item.filePath);
-      e.dataTransfer.setData('text/uri-list',item.fileURL || `file://${item.filePath}`);
-      e.dataTransfer.setData('DownloadURL',`image/png:${item.filename}:${item.fileURL || `file://${item.filePath}`}`);
-      const composite=galleryCompositeCache.get(item.filePath)?.dataURL;
-      if (composite) {
-        try {
-          const file=dataURLToFile(composite,item.filename);
-          e.dataTransfer.items.add(file);
-          e.dataTransfer.setData('text/html',`<img src="${composite}" alt="${item.filename}">`);
-        } catch {}
-      }
-      if (img.complete) e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);
+      startExternalGalleryDrag(item);
     });
 
-    div.addEventListener('dragend',()=>{
-      galleryDragPath=null;
-      galleryDragPaths=[];
-      document.querySelectorAll('.gallery-item').forEach(el=>
-        el.classList.toggle('current',el.dataset.fp===currentPath));
+    div.addEventListener('dragend', () => {
+      galleryDragPath = null;
+      galleryDragPaths = [];
+      document.querySelectorAll('.gallery-item').forEach(el =>
+        el.classList.toggle('current', el.dataset.fp === currentPath));
       syncGallerySelection();
-    });
-
-    div.addEventListener('dragover',e=>{
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect='move';
-      div.classList.add('current');
-    });
-
-    div.addEventListener('dragleave',()=>{
-      div.classList.toggle('current',item.filePath===currentPath);
-      div.classList.toggle('selected',selectedGalleryPaths.includes(item.filePath));
-    });
-
-    div.addEventListener('drop',e=>{
-      e.preventDefault();
-      e.stopPropagation();
-      const dragPath=e.dataTransfer.getData('application/x-jqg-gallery-reorder') || galleryDragPath;
-      moveGalleryItem(dragPath,item.filePath);
-      galleryDragPath=null;
-      galleryDragPaths=[];
     });
 
     scroll.appendChild(div);
@@ -2623,8 +2684,12 @@ async function loadRuntimeBadge() {
     badge.textContent = 'Browser';
     return;
   }
-  badge.textContent = `${info.packaged ? 'Packaged' : 'Dev'} ${info.version}`;
-  badge.title = info.appPath || '';
+  const build = info.buildTime ? new Date(info.buildTime) : null;
+  const stamp = build && !Number.isNaN(build.getTime())
+    ? build.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })
+    : info.version;
+  badge.textContent = `${info.packaged ? 'Packaged' : 'Dev'} ${stamp}`;
+  badge.title = [info.execPath, info.appPath, info.buildTime].filter(Boolean).join('\n');
   badge.classList.toggle('packaged', !!info.packaged);
   badge.classList.toggle('dev', !info.packaged);
 }
@@ -2634,10 +2699,40 @@ if (window.electronAPI) {
   window.electronAPI.onImageData(({imageDataURL,savedFilePath})=>{
     loadImageWithAnns(imageDataURL,savedFilePath,[]);
     flashAutoSaved();
-    setTimeout(loadGallery,350);
+    // Switch to All Captures so new item is never hidden by a project filter
+    if (activeProject() !== 'all') {
+      localStorage.setItem(ACTIVE_PROJECT_KEY, 'all');
+      renderProjects();
+    }
+    loadGallery().then(()=>{
+      document.querySelector('.gallery-item.current')
+        ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
   });
 }
 
+// ── Panel positions ───────────────────────────────────────────────────────────
+const TOOLBAR_POS_KEY     = 'jqg-toolbar-pos';
+const TOOL_SIDEBAR_POS_KEY = 'jqg-tool-sidebar-pos';
+
+function applyPanelPositions() {
+  document.querySelector('.toolbar')
+    .classList.toggle('pos-top', localStorage.getItem(TOOLBAR_POS_KEY) === 'top');
+  document.querySelector('.tool-sidebar')
+    .classList.toggle('pos-right', localStorage.getItem(TOOL_SIDEBAR_POS_KEY) === 'right');
+}
+
+document.getElementById('btn-toggle-toolbar').addEventListener('click', () => {
+  const isTop = document.querySelector('.toolbar').classList.toggle('pos-top');
+  localStorage.setItem(TOOLBAR_POS_KEY, isTop ? 'top' : 'bottom');
+});
+
+document.getElementById('btn-toggle-tool-sidebar').addEventListener('click', () => {
+  const isRight = document.querySelector('.tool-sidebar').classList.toggle('pos-right');
+  localStorage.setItem(TOOL_SIDEBAR_POS_KEY, isRight ? 'right' : 'left');
+});
+
+applyPanelPositions();
 applyPrefs();
 renderProjects();
 loadRuntimeBadge();
