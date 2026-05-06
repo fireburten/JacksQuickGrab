@@ -28,6 +28,7 @@
       "scripts/**/*",
       "src/**/*"
     ],
+    "asarUnpack": ["scripts/**/*"],
     "mac": {
       "category": "public.app-category.graphics-design",
       "icon": "logo2-icon.png",

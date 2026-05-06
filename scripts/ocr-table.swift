@@ -9,6 +9,7 @@ struct OCRItem: Codable {
   let y: CGFloat
   let w: CGFloat
   let h: CGFloat
+  let obsId: Int  // Vision observation index — words sharing an obsId are one logical cell
 }
 
 guard CommandLine.arguments.count > 1 else { print("[]"); exit(0) }
@@ -31,7 +32,7 @@ let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 try? handler.perform([request])
 
 var items: [OCRItem] = []
-for observation in request.results ?? [] {
+for (obsIndex, observation) in (request.results ?? []).enumerated() {
   guard let candidate = observation.topCandidates(1).first else { continue }
   let fullText = candidate.string
   var searchStart = fullText.startIndex
@@ -48,7 +49,8 @@ for observation in request.results ?? [] {
       x: b.minX * width,
       y: (1 - b.maxY) * height,
       w: b.width * width,
-      h: b.height * height
+      h: b.height * height,
+      obsId: obsIndex
     ))
   }
 }

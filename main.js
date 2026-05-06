@@ -126,14 +126,11 @@ function writeDataURLTemp(imageDataURL, ext = 'png') {
 }
 
 function ocrScriptPath(filename = 'ocr.swift') {
-  const bundled = path.join(app.getAppPath(), 'scripts', filename);
-  const tmp = path.join(os.tmpdir(), `jqg-${filename}`);
-  try {
-    fs.copyFileSync(bundled, tmp);
-    return tmp;
-  } catch {
-    return bundled;
+  if (app.isPackaged) {
+    // Scripts are unpacked outside the ASAR so child processes can read them directly.
+    return path.join(process.resourcesPath, 'app.asar.unpacked', 'scripts', filename);
   }
+  return path.join(__dirname, 'scripts', filename);
 }
 
 function migrateLegacyAnnotations() {
@@ -679,21 +676,41 @@ ipcMain.handle('share-image', async (_e, { imageDataURL, filename }) => {
   } catch { return { success: false }; }
 });
 
-ipcMain.handle('ocr-image', async (_e, { imageDataURL }) => {
-  if (process.platform !== 'darwin') return { success: false, error: 'OCR is only supported on macOS' };
-  const tmp = writeDataURLTemp(imageDataURL, 'png');
-  try {
-    const script = ocrScriptPath();
-    if (!fs.existsSync(script)) return { success: false, error: 'OCR helper missing' };
-    const out = await new Promise((resolve, reject) => {
-      execFile('/usr/bin/swift', [script, tmp], {
+function runOCRScript(scriptFile, tmp, swiftEnv) {
+  return new Promise((resolve, reject) => {
+    if (process.platform === 'darwin') {
+      execFile('/usr/bin/swift', [scriptFile, tmp], {
         maxBuffer: 1024 * 1024 * 8,
-        env: { ...process.env, CLANG_MODULE_CACHE_PATH: path.join(os.tmpdir(), 'jqg-swift-cache') },
+        env: swiftEnv,
       }, (err, stdout, stderr) => {
         if (err) reject(new Error(stderr || err.message));
         else resolve(stdout);
       });
-    });
+    } else {
+      execFile('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-File', scriptFile, tmp,
+      ], {
+        maxBuffer: 1024 * 1024 * 8,
+      }, (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr || err.message));
+        else resolve(stdout);
+      });
+    }
+  });
+}
+
+ipcMain.handle('ocr-image', async (_e, { imageDataURL }) => {
+  if (process.platform !== 'darwin' && process.platform !== 'win32')
+    return { success: false, error: 'OCR is only supported on macOS and Windows' };
+  const tmp = writeDataURLTemp(imageDataURL, 'png');
+  try {
+    const scriptFile = process.platform === 'win32'
+      ? ocrScriptPath('ocr-table.ps1')
+      : ocrScriptPath('ocr.swift');
+    if (!fs.existsSync(scriptFile)) return { success: false, error: 'OCR helper missing' };
+    const swiftEnv = { ...process.env, CLANG_MODULE_CACHE_PATH: path.join(os.tmpdir(), 'jqg-swift-cache') };
+    const out = await runOCRScript(scriptFile, tmp, swiftEnv);
     return { success: true, items: JSON.parse(out || '[]') };
   } catch (err) {
     return { success: false, error: err.message };
@@ -703,20 +720,16 @@ ipcMain.handle('ocr-image', async (_e, { imageDataURL }) => {
 });
 
 ipcMain.handle('ocr-table-image', async (_e, { imageDataURL }) => {
-  if (process.platform !== 'darwin') return { success: false, error: 'OCR is only supported on macOS' };
+  if (process.platform !== 'darwin' && process.platform !== 'win32')
+    return { success: false, error: 'OCR is only supported on macOS and Windows' };
   const tmp = writeDataURLTemp(imageDataURL, 'png');
   try {
-    const script = ocrScriptPath('ocr-table.swift');
-    if (!fs.existsSync(script)) return { success: false, error: 'OCR table helper missing' };
-    const out = await new Promise((resolve, reject) => {
-      execFile('/usr/bin/swift', [script, tmp], {
-        maxBuffer: 1024 * 1024 * 8,
-        env: { ...process.env, CLANG_MODULE_CACHE_PATH: path.join(os.tmpdir(), 'jqg-swift-cache') },
-      }, (err, stdout, stderr) => {
-        if (err) reject(new Error(stderr || err.message));
-        else resolve(stdout);
-      });
-    });
+    const scriptFile = process.platform === 'win32'
+      ? ocrScriptPath('ocr-table.ps1')
+      : ocrScriptPath('ocr-table.swift');
+    if (!fs.existsSync(scriptFile)) return { success: false, error: 'OCR helper missing' };
+    const swiftEnv = { ...process.env, CLANG_MODULE_CACHE_PATH: path.join(os.tmpdir(), 'jqg-swift-cache') };
+    const out = await runOCRScript(scriptFile, tmp, swiftEnv);
     return { success: true, items: JSON.parse(out || '[]') };
   } catch (err) {
     return { success: false, error: err.message };

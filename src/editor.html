@@ -2218,52 +2218,78 @@ async function doOCRCopy() {
   toast('Text copied');
 }
 
-function groupOCRRows(items) {
-  const sorted=[...items].sort((a,b)=>(a.y+a.h/2)-(b.y+b.h/2));
+// Groups logical cells (already reconstructed from obsId) into table rows
+// using vertical overlap rather than center-proximity. This is robust against
+// adjacent dense rows and mixed-height headers.
+function groupCellsIntoRows(cells) {
+  const sorted=[...cells].sort((a,b)=>(a.y+a.h/2)-(b.y+b.h/2));
   const rows=[];
-  sorted.forEach(item=>{
-    const cy=item.y+item.h/2;
-    const target=rows.find(row=>Math.abs(row.cy-cy)<=Math.max(8,Math.min(26,row.h*0.75,item.h*0.75)));
+  sorted.forEach(cell=>{
+    const top=cell.y, bot=cell.y+cell.h;
+    const target=rows.find(row=>{
+      const ov=Math.min(bot,row.bot)-Math.max(top,row.top);
+      return ov>=Math.min(bot-top,row.bot-row.top)*0.4;
+    });
     if (target) {
-      target.items.push(item);
-      target.cy=(target.cy*(target.items.length-1)+cy)/target.items.length;
-      target.h=Math.max(target.h,item.h);
+      target.cells.push(cell);
+      target.top=Math.min(target.top,top);
+      target.bot=Math.max(target.bot,bot);
     } else {
-      rows.push({cy,h:item.h,items:[item]});
+      rows.push({top,bot,cells:[cell]});
     }
   });
-  return rows.map(row=>row.items.sort((a,b)=>a.x-b.x));
+  return rows.map(r=>r.cells.sort((a,b)=>a.x-b.x));
 }
 
 function ocrItemsToTSV(items) {
-  const useful=items.filter(i=>String(i.text||'').trim() && (i.confidence ?? 1) > 0.18);
+  const useful=items.filter(i=>String(i.text||'').trim() && (i.confidence??1)>0.18);
   if (!useful.length) return '';
-  const rows=groupOCRRows(useful);
+
+  // Group words into logical cells using obsId (Vision observation index).
+  // Words sharing an obsId came from the same text region (e.g. a multi-word
+  // column header) and should be treated as one cell with one column center.
+  const cellMap=new Map();
+  useful.forEach(item=>{
+    const key=item.obsId!==undefined ? String(item.obsId) : `${item.x.toFixed(1)}_${item.y.toFixed(1)}`;
+    if (!cellMap.has(key)) cellMap.set(key,[]);
+    cellMap.get(key).push(item);
+  });
+  const cells=[];
+  cellMap.forEach(words=>{
+    const sw=words.sort((a,b)=>a.x-b.x);
+    cells.push({
+      text: sw.map(w=>w.text.trim()).join(' '),
+      x:    Math.min(...words.map(w=>w.x)),
+      y:    Math.min(...words.map(w=>w.y)),
+      w:    Math.max(...words.map(w=>w.x+w.w))-Math.min(...words.map(w=>w.x)),
+      h:    Math.max(...words.map(w=>w.y+w.h))-Math.min(...words.map(w=>w.y)),
+    });
+  });
+
+  const rows=groupCellsIntoRows(cells);
+
+  // Build column centers from cell x-centers (not word centers).
+  // Tolerance is a fraction of the cell width so wide header cells and narrow
+  // data cells both snap to the same column.
   const centers=[];
-  rows.flat().forEach(item=>{
-    const cx=item.x+item.w/2;
-    let col=centers.find(c=>Math.abs(c.x-cx)<=Math.max(14,item.w*0.65));
-    if (col) {
-      col.x=(col.x*col.count+cx)/(col.count+1);
-      col.count++;
-    } else {
-      centers.push({x:cx,count:1});
-    }
+  rows.flat().forEach(cell=>{
+    const cx=cell.x+cell.w/2;
+    let col=centers.find(c=>Math.abs(c.x-cx)<=Math.max(6,cell.w*0.25));
+    if (col) { col.x=(col.x*col.count+cx)/(col.count+1); col.count++; }
+    else centers.push({x:cx,count:1});
   });
   centers.sort((a,b)=>a.x-b.x);
+
   return rows.map(row=>{
-    const cells=Array(centers.length).fill('');
-    row.forEach(item=>{
-      const cx=item.x+item.w/2;
-      let best=0, bestDist=Infinity;
-      centers.forEach((col,idx)=>{
-        const dist=Math.abs(col.x-cx);
-        if (dist<bestDist) { best=idx; bestDist=dist; }
-      });
-      cells[best]=(cells[best] ? cells[best]+' ' : '') + item.text.trim();
+    const out=Array(centers.length).fill('');
+    row.forEach(cell=>{
+      const cx=cell.x+cell.w/2;
+      let best=0,bestDist=Infinity;
+      centers.forEach((col,idx)=>{ const d=Math.abs(col.x-cx); if(d<bestDist){best=idx;bestDist=d;} });
+      out[best]=out[best]?out[best]+' '+cell.text:cell.text;
     });
-    while (cells.length && !cells[cells.length-1]) cells.pop();
-    return cells.join('\t');
+    while (out.length&&!out[out.length-1]) out.pop();
+    return out.join('\t');
   }).filter(Boolean).join('\n');
 }
 
