@@ -216,6 +216,7 @@ function toggleHUD() {
 // access and requires no TCC permission from this app.
 
 async function runScreencapture(flags) {
+  if (process.platform !== 'darwin') return null;
   const tmpFile = path.join(os.tmpdir(), `jqg-${Date.now()}.png`);
   await new Promise(resolve => {
     execFile('/usr/sbin/screencapture', [...flags, tmpFile], () => resolve());
@@ -313,19 +314,23 @@ function showFirstRunOnboarding() {
   const settings = readSettings();
   if (settings.onboardingSeen) return;
   writeSettings({ onboardingSeen: true });
+  const isMac = process.platform === 'darwin';
+  const permissionNote = isMac
+    ? 'Enable Screen Recording permission if captures show only the desktop background.'
+    : 'If captures are blank, allow screen capture in Windows Settings → Privacy & Security → Screen capture.';
   dialog.showMessageBox({
     type: 'info',
-    buttons: ['Open Screen Settings', 'Start Using'],
-    defaultId: 1,
-    cancelId: 1,
+    buttons: isMac ? ['Open Screen Settings', 'Start Using'] : ['Start Using'],
+    defaultId: isMac ? 1 : 0,
+    cancelId: isMac ? 1 : 0,
     message: "Welcome to Jack's Quick Grab",
     detail: [
-      'Use the menu bar icon for region, window, full-screen, delayed, and repeat-region captures.',
+      'Use the system tray icon for region, window, full-screen, delayed, and repeat-region captures.',
       'Use the editor sidebar for history, search, pins, rename, reveal, and delete.',
-      'Enable Screen Recording permission if captures show only the desktop background.',
+      permissionNote,
     ].join('\n\n'),
   }).then(({ response }) => {
-    if (response === 0) shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+    if (isMac && response === 0) shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
   }).catch(() => {});
 }
 
@@ -675,6 +680,7 @@ ipcMain.handle('share-image', async (_e, { imageDataURL, filename }) => {
 });
 
 ipcMain.handle('ocr-image', async (_e, { imageDataURL }) => {
+  if (process.platform !== 'darwin') return { success: false, error: 'OCR is only supported on macOS' };
   const tmp = writeDataURLTemp(imageDataURL, 'png');
   try {
     const script = ocrScriptPath();
@@ -697,6 +703,7 @@ ipcMain.handle('ocr-image', async (_e, { imageDataURL }) => {
 });
 
 ipcMain.handle('ocr-table-image', async (_e, { imageDataURL }) => {
+  if (process.platform !== 'darwin') return { success: false, error: 'OCR is only supported on macOS' };
   const tmp = writeDataURLTemp(imageDataURL, 'png');
   try {
     const script = ocrScriptPath('ocr-table.swift');
@@ -744,7 +751,11 @@ ipcMain.handle('permission-status', () => ({
 }));
 
 ipcMain.on('open-screen-settings', () => {
-  shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+  if (process.platform === 'darwin') {
+    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+  } else if (process.platform === 'win32') {
+    shell.openExternal('ms-settings:privacy');
+  }
 });
 
 ipcMain.handle('gallery-list', () => {
