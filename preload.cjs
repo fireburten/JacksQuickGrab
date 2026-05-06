@@ -28,8 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Editor → Main
   editorCopy:      (dataURL)  => ipcRenderer.send('editor-copy', dataURL),
   editorSave:      (data)     => ipcRenderer.invoke('editor-save', data),
+  overwriteImage:  (data)     => ipcRenderer.invoke('image-overwrite', data),
   shareImage:      (data)     => ipcRenderer.invoke('share-image', data),
   ocrImage:        (data)     => ipcRenderer.invoke('ocr-image', data),
+  ocrTableImage:   (data)     => ipcRenderer.invoke('ocr-table-image', data),
   editorClose:     ()         => ipcRenderer.send('editor-close'),
   annotationSave:  (data)     => ipcRenderer.send('annotation-save', data),
   annotationSaveNow: (data)   => ipcRenderer.invoke('annotation-save-now', data),
@@ -39,6 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   appInfo:         ()         => ipcRenderer.invoke('app-info'),
   permissionStatus: ()        => ipcRenderer.invoke('permission-status'),
   openScreenSettings: ()      => ipcRenderer.send('open-screen-settings'),
+  hudSetCollapsed: (collapsed) => ipcRenderer.send('hud-set-collapsed', collapsed),
   shortcutsGet:    ()         => ipcRenderer.invoke('shortcuts-get'),
   shortcutsSet:    (data)     => ipcRenderer.invoke('shortcuts-set', data),
 

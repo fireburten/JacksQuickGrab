@@ -125,9 +125,9 @@ function writeDataURLTemp(imageDataURL, ext = 'png') {
   return tmp;
 }
 
-function ocrScriptPath() {
-  const bundled = path.join(app.getAppPath(), 'scripts', 'ocr.swift');
-  const tmp = path.join(os.tmpdir(), 'jqg-ocr.swift');
+function ocrScriptPath(filename = 'ocr.swift') {
+  const bundled = path.join(app.getAppPath(), 'scripts', filename);
+  const tmp = path.join(os.tmpdir(), `jqg-${filename}`);
   try {
     fs.copyFileSync(bundled, tmp);
     return tmp;
@@ -152,7 +152,7 @@ function migrateLegacyAnnotations() {
 // ── Tray ──────────────────────────────────────────────────────────────────────
 
 function createTray() {
-  let icon = nativeImage.createFromPath(path.join(__dirname, 'logo.png'));
+  let icon = nativeImage.createFromPath(path.join(__dirname, 'logo2-hud.png'));
   icon = icon.resize({ width: 22, height: 22 });
   tray = new Tray(icon);
   tray.setToolTip("Jack's Quick Grab");
@@ -545,6 +545,13 @@ ipcMain.on('hud-capture', (_e, mode) => {
   else triggerCapture(mode);
 });
 
+ipcMain.on('hud-set-collapsed', (_e, collapsed) => {
+  if (!hudWindow || hudWindow.isDestroyed()) return;
+  hudWindow.setResizable(true);
+  hudWindow.setSize(collapsed ? 70 : 500, collapsed ? 70 : 90, false);
+  hudWindow.setResizable(false);
+});
+
 ipcMain.on('hud-history', () => {
   if (editorWin && !editorWin.isDestroyed()) { editorWin.focus(); return; }
   editorWin = new BrowserWindow({
@@ -646,6 +653,18 @@ ipcMain.handle('editor-save', async (_e, { imageDataURL, defaultName }) => {
   return { success: false };
 });
 
+ipcMain.handle('image-overwrite', (_e, { filePath, imageDataURL }) => {
+  try {
+    const safePath = safeCapturePath(filePath);
+    if (!safePath || !fs.existsSync(safePath)) return { success: false };
+    const data = imageDataURL.replace(/^data:image\/\w+;base64,/, '');
+    fs.writeFileSync(safePath, Buffer.from(data, 'base64'));
+    return { success: true };
+  } catch {
+    return { success: false };
+  }
+});
+
 ipcMain.handle('share-image', async (_e, { imageDataURL, filename }) => {
   try {
     const filePath = writeDataURLTemp(imageDataURL, /\.jpe?g$/i.test(filename || '') ? 'jpg' : 'png');
@@ -660,6 +679,28 @@ ipcMain.handle('ocr-image', async (_e, { imageDataURL }) => {
   try {
     const script = ocrScriptPath();
     if (!fs.existsSync(script)) return { success: false, error: 'OCR helper missing' };
+    const out = await new Promise((resolve, reject) => {
+      execFile('/usr/bin/swift', [script, tmp], {
+        maxBuffer: 1024 * 1024 * 8,
+        env: { ...process.env, CLANG_MODULE_CACHE_PATH: path.join(os.tmpdir(), 'jqg-swift-cache') },
+      }, (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr || err.message));
+        else resolve(stdout);
+      });
+    });
+    return { success: true, items: JSON.parse(out || '[]') };
+  } catch (err) {
+    return { success: false, error: err.message };
+  } finally {
+    try { fs.unlinkSync(tmp); } catch {}
+  }
+});
+
+ipcMain.handle('ocr-table-image', async (_e, { imageDataURL }) => {
+  const tmp = writeDataURLTemp(imageDataURL, 'png');
+  try {
+    const script = ocrScriptPath('ocr-table.swift');
+    if (!fs.existsSync(script)) return { success: false, error: 'OCR table helper missing' };
     const out = await new Promise((resolve, reject) => {
       execFile('/usr/bin/swift', [script, tmp], {
         maxBuffer: 1024 * 1024 * 8,

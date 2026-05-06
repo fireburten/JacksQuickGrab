@@ -13,6 +13,8 @@ body {
   -webkit-user-select: none;
 }
 .hud {
+  width: 100vw;
+  height: 70px;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -26,22 +28,45 @@ body {
   -webkit-app-region: drag;
   cursor: -webkit-grab;
 }
+.hud.collapsed {
+  justify-content: center;
+  padding: 8px;
+}
+.hud.collapsed .mode-btn,
+.hud.collapsed .sep,
+.hud.collapsed .hist-btn {
+  display: none;
+}
+.hud.collapsed .collapse-btn {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: rgba(108,78,246,.88);
+  color: #fff;
+}
 .drag-handle {
-  padding: 0 8px 0 2px;
-  border-right: 1px solid rgba(255,255,255,.09);
-  margin-right: 4px;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  margin-right: 6px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  -webkit-app-region: drag;
+}
+.hud.collapsed .drag-handle {
+  margin-right: 0;
 }
 .drag-handle img {
-  width: 34px;
-  height: 34px;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
   pointer-events: none;
   display: block;
-  background: #fff;
-  border-radius: 7px;
-  padding: 2px;
 }
 .mode-btn {
   display: flex;
@@ -108,13 +133,26 @@ body {
 .hist-btn .lbl { font-size: 10px; color: rgba(255,255,255,.22); }
 .hist-btn:hover .ic { color: rgba(255,255,255,.6); }
 .hist-btn:hover .lbl { color: rgba(255,255,255,.5); }
+.collapse-btn {
+  width: 28px;
+  height: 42px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255,255,255,.04);
+  color: rgba(255,255,255,.42);
+  cursor: pointer;
+  font: 700 16px system-ui;
+  -webkit-app-region: no-drag;
+}
+.collapse-btn:hover { background: rgba(108,78,246,.22); color: #fff; }
 </style>
 </head>
 <body>
 <div class="hud">
   <div class="drag-handle">
-    <img src="../logo.png" alt="JQG">
+    <img src="../logo2-hud.png" alt="JQG">
   </div>
+  <button class="collapse-btn" id="btn-collapse" title="Collapse HUD">‹</button>
 
   <button class="mode-btn" data-mode="region" title="Capture Region (⌘⇧4)">
     <span class="ic">⊹</span><span class="lbl">Region</span>
@@ -149,6 +187,24 @@ body {
 </div>
 
 <script>
+const hud = document.querySelector('.hud');
+const dragHandle = document.querySelector('.drag-handle');
+const collapseBtn = document.getElementById('btn-collapse');
+let collapsed = localStorage.getItem('jqg-hud-collapsed') === '1';
+
+function setCollapsed(next) {
+  collapsed = !!next;
+  hud.classList.toggle('collapsed', collapsed);
+  collapseBtn.title = collapsed ? 'Expand HUD' : 'Collapse HUD';
+  collapseBtn.textContent = collapsed ? '›' : '‹';
+  localStorage.setItem('jqg-hud-collapsed', collapsed ? '1' : '0');
+  window.electronAPI?.hudSetCollapsed?.(collapsed);
+}
+
+collapseBtn.addEventListener('click', () => setCollapsed(!collapsed));
+dragHandle.addEventListener('dblclick', () => setCollapsed(!collapsed));
+setCollapsed(collapsed);
+
 // ── Capture buttons ───────────────────────────────────────────────────────────
 document.querySelectorAll('.mode-btn:not(:disabled):not([data-mode="record"])').forEach(btn => {
   btn.addEventListener('click', () => {

@@ -22,19 +22,22 @@
       "preload.cjs",
       "package.json",
       "logo.png",
+      "logo2.png",
+      "logo2-icon.png",
+      "logo2-hud.png",
       "scripts/**/*",
       "src/**/*"
     ],
     "mac": {
       "category": "public.app-category.graphics-design",
-      "icon": "logo.png",
+      "icon": "logo2-icon.png",
       "identity": null,
       "extendInfo": {
         "NSScreenCaptureUsageDescription": "Jack's Quick Grab needs to capture your screen to take screenshots."
       }
     },
     "win": {
-      "icon": "logo.png"
+      "icon": "logo2-icon.png"
     }
   }
 }
