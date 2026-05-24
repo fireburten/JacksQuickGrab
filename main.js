@@ -17,7 +17,8 @@ let windowPickerWin = null;
 let lastRegionRect = null;
 let recordingMode  = false;
 
-const SAVE_DIR = path.join(os.homedir(), 'Documents', "Jack's Quick Grab");
+const SAVE_DIR = path.join(os.homedir(), 'Documents', "Jack's Picker");
+const LEGACY_SAVE_DIR = path.join(os.homedir(), 'Documents', "Jack's Quick Grab");
 const ANNOTATION_DIR = path.join(SAVE_DIR, '.annotations');
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
 const DEFAULT_SHORTCUTS = {
@@ -133,6 +134,14 @@ function ocrScriptPath(filename = 'ocr.swift') {
   return path.join(__dirname, 'scripts', filename);
 }
 
+function migrateLegacySaveDir() {
+  try {
+    if (fs.existsSync(LEGACY_SAVE_DIR) && !fs.existsSync(SAVE_DIR)) {
+      fs.renameSync(LEGACY_SAVE_DIR, SAVE_DIR);
+    }
+  } catch {}
+}
+
 function migrateLegacyAnnotations() {
   try {
     fs.mkdirSync(ANNOTATION_DIR, { recursive: true });
@@ -149,19 +158,19 @@ function migrateLegacyAnnotations() {
 // ── Tray ──────────────────────────────────────────────────────────────────────
 
 function createTray() {
-  let icon = nativeImage.createFromPath(path.join(__dirname, 'logo2-hud.png'));
+  let icon = nativeImage.createFromPath(path.join(__dirname, 'picker-hud.png'));
   icon = icon.resize({ width: 22, height: 22 });
   tray = new Tray(icon);
-  tray.setToolTip("Jack's Quick Grab");
-  tray.setContextMenu(buildTrayMenu());
+  tray.setToolTip("Jack's Picker");
   tray.on('click', toggleHUD);
+  tray.on('right-click', () => tray.popUpContextMenu(buildTrayMenu()));
 }
 
 function buildTrayMenu() {
   const settings = readSettings();
   const shortcuts = readShortcuts();
   return Menu.buildFromTemplate([
-    { label: "Jack's Quick Grab", enabled: false },
+    { label: "Jack's Picker", enabled: false },
     { type: 'separator' },
     { label: 'Capture Region',      accelerator: shortcuts.region, click: () => triggerCapture('region') },
     { label: 'Repeat Last Region',  accelerator: shortcuts.repeat, enabled: !!lastRegionRect, click: captureLastRegion },
@@ -298,7 +307,7 @@ function maybeShowScreenPermissionHelp() {
       defaultId: 0,
       cancelId: 1,
       message: 'Screen Recording permission is needed',
-      detail: "If captures show only the desktop background, allow Jack's Quick Grab, Electron, or your terminal app in System Settings → Privacy & Security → Screen Recording, then restart the app.",
+      detail: "If captures show only the desktop background, allow Jack's Picker, Electron, or your terminal app in System Settings → Privacy & Security → Screen Recording, then restart the app.",
     }).then(({ response }) => {
       if (response === 0) {
         shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
@@ -320,7 +329,7 @@ function showFirstRunOnboarding() {
     buttons: isMac ? ['Open Screen Settings', 'Start Using'] : ['Start Using'],
     defaultId: isMac ? 1 : 0,
     cancelId: isMac ? 1 : 0,
-    message: "Welcome to Jack's Quick Grab",
+    message: "Welcome to Jack's Picker",
     detail: [
       'Use the system tray icon for region, window, full-screen, delayed, and repeat-region captures.',
       'Use the editor sidebar for history, search, pins, rename, reveal, and delete.',
@@ -381,7 +390,7 @@ async function captureWindowFromPicker() {
   });
   const windows = sources
     .filter(s => s.thumbnail && !s.thumbnail.isEmpty())
-    .filter(s => !/Jack's Quick Grab/i.test(s.name))
+    .filter(s => !/Jack's Picker/i.test(s.name))
     .slice(0, 9);
   if (!windows.length) return null;
 
@@ -593,7 +602,6 @@ ipcMain.handle('shortcuts-set', (_e, shortcuts) => {
   });
   writeSettings({ shortcuts: cleaned });
   const failures = registerCaptureShortcuts();
-  if (tray) tray.setContextMenu(buildTrayMenu());
   return { success: failures.length === 0, shortcuts: readShortcuts(), failures };
 });
 
@@ -626,7 +634,6 @@ ipcMain.on('capture-done', (_e, { imageDataURL, rect }) => {
   closeCaptureWin();
   if (rect) lastRegionRect = rect;
   finishCapture(imageDataURL, rect);
-  if (tray) tray.setContextMenu(buildTrayMenu());
 });
 
 ipcMain.on('capture-cancel', () => {
@@ -917,6 +924,7 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  migrateLegacySaveDir();
   fs.mkdirSync(SAVE_DIR, { recursive: true });
   fs.mkdirSync(ANNOTATION_DIR, { recursive: true });
   migrateLegacyAnnotations();

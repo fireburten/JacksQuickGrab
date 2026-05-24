@@ -1,13 +1,14 @@
 {
-  "name": "jacks-quick-grab",
+  "name": "jacks-picker",
   "version": "1.0.0",
   "description": "Fast screenshot and annotation tool",
+  "author": "Rind Works",
   "main": "main.js",
   "scripts": {
     "start": "unset ELECTRON_RUN_AS_NODE && electron .",
     "build": "electron-builder",
     "build:dir": "electron-builder --dir",
-    "open:dist": "unset ELECTRON_RUN_AS_NODE && open -n \"$PWD/dist/mac-arm64/Jack's Quick Grab.app\"",
+    "open:dist": "unset ELECTRON_RUN_AS_NODE && open -n \"$PWD/dist/mac-arm64/Jack's Picker.app\"",
     "rebuild:open": "npm run build:dir && npm run open:dist"
   },
   "devDependencies": {
@@ -15,30 +16,28 @@
     "electron-builder": "^25.0.0"
   },
   "build": {
-    "appId": "com.jacksquickgrab.app",
-    "productName": "Jack's Quick Grab",
+    "appId": "com.rindworks.jackspicker",
+    "productName": "Jack's Picker",
     "files": [
       "main.js",
       "preload.cjs",
       "package.json",
-      "logo.png",
-      "logo2.png",
-      "logo2-icon.png",
-      "logo2-hud.png",
+      "picker-icon.png",
+      "picker-hud.png",
       "scripts/**/*",
       "src/**/*"
     ],
     "asarUnpack": ["scripts/**/*"],
     "mac": {
       "category": "public.app-category.graphics-design",
-      "icon": "logo2-icon.png",
+      "icon": "picker-icon.png",
       "identity": null,
       "extendInfo": {
-        "NSScreenCaptureUsageDescription": "Jack's Quick Grab needs to capture your screen to take screenshots."
+        "NSScreenCaptureUsageDescription": "Jack's Picker needs to capture your screen to take screenshots."
       }
     },
     "win": {
-      "icon": "logo2-icon.png"
+      "icon": "picker-icon.png"
     }
   }
 }
