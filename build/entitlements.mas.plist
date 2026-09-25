@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <!-- Electron's helper processes talk over a shared app group. Replace TEAMID with your Apple Developer Team ID. -->
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>TEAMID.com.rindworks.jackspicker</string>
+  </array>
+  <!-- Save As dialog, opening/dropping images from anywhere. -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <!-- Captures and recordings are stored in ~/Pictures/Jack's Picker. -->
+  <key>com.apple.security.assets.pictures.read-write</key>
+  <true/>
+</dict>
+</plist>

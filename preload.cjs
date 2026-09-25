@@ -46,7 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   shortcutsSet:    (data)     => ipcRenderer.invoke('shortcuts-set', data),
 
   // Gallery
-  galleryList:       ()         => ipcRenderer.invoke('gallery-list'),
+  galleryList:       (include)  => ipcRenderer.invoke('gallery-list', include),
   galleryLoad:       (filePath) => ipcRenderer.invoke('gallery-load', filePath),
   galleryDelete:     (filePath) => ipcRenderer.invoke('gallery-delete', filePath),
   galleryRename:     (data)     => ipcRenderer.invoke('gallery-rename', data),

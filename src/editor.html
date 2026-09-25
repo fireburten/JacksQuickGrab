@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="fonts/poppins.css">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -637,6 +638,30 @@ body.crop-mode .crop-actions { display:flex; }
     <div class="choice-actions">
       <button id="project-name-create">Create</button>
       <button id="project-name-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<div class="choice-backdrop" id="text-ask-backdrop">
+  <div class="choice-box">
+    <h2 id="text-ask-title"></h2>
+    <input class="choice-input" id="text-ask-input">
+    <div class="choice-actions">
+      <button id="text-ask-ok">OK</button>
+      <button id="text-ask-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<div class="choice-backdrop" id="prefs-backdrop">
+  <div class="choice-box">
+    <h2>Preferences</h2>
+    <p>Defaults for new annotations.</p>
+    <div class="resize-grid">
+      <label>Stroke size <input id="prefs-stroke" type="number" min="1" max="40"></label>
+      <label>Color <input id="prefs-color" type="color"></label>
+    </div>
+    <div class="choice-actions">
+      <button id="prefs-save">Save</button>
+      <button id="prefs-cancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -1920,6 +1945,11 @@ canvasWrap.addEventListener('drop', addDroppedImage);
 
 document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('drop', e => e.preventDefault());
+// Gallery cards start a native OS drag, which never fires dragend here. Once the mouse moves
+// with no button held, that drag is over; forget it so a later Finder drop isn't taken as a reorder.
+document.addEventListener('mousemove', e => {
+  if (!e.buttons && galleryDragPath) { galleryDragPath = null; galleryDragPaths = []; }
+});
 
 document.addEventListener('paste', async e => {
   if (e.target.tagName === 'INPUT') return;
@@ -2198,7 +2228,8 @@ async function doShare() {
   if (!window.electronAPI) return;
   const ts=new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
   const r=await window.electronAPI.shareImage({imageDataURL:flatDataURL(),filename:`share-${ts}.png`});
-  toast(r?.success ? 'Share file revealed and copied' : 'Share failed');
+  if (!r?.success) toast('Share failed');
+  else if (!r.sheet) toast('Share file revealed and copied');
 }
 
 async function runOCR() {
@@ -2389,14 +2420,21 @@ async function showPermissions() {
 
 let hotkeyDraft = {};
 
+// Same formatting as the HUD tooltips: ⌥⇧⌘2 on macOS, Ctrl+Alt+Shift+2 elsewhere.
+const IS_MAC=/Mac/i.test(navigator.platform || navigator.userAgent);
 function displayHotkey(accelerator) {
-  return String(accelerator || '')
-    .replace(/CommandOrControl/g,'⌘/Ctrl')
-    .replace(/Command/g,'⌘')
-    .replace(/Control/g,'Ctrl')
-    .replace(/Shift/g,'⇧')
-    .replace(/Alt/g,'⌥')
-    .replace(/\+/g,' + ');
+  const parts=String(accelerator || '').split('+').filter(Boolean);
+  const key=parts.pop();
+  if (!key) return '';
+  const mods=new Set(parts.map(p=>
+    /^(CommandOrControl|CmdOrCtrl)$/i.test(p) ? (IS_MAC ? 'cmd' : 'ctrl') :
+    /^(Command|Cmd|Meta|Super)$/i.test(p) ? 'cmd' :
+    /^(Control|Ctrl)$/i.test(p) ? 'ctrl' :
+    /^(Alt|Option|AltGr)$/i.test(p) ? 'alt' :
+    /^Shift$/i.test(p) ? 'shift' : ''));
+  const labels=IS_MAC ? {ctrl:'⌃',alt:'⌥',shift:'⇧',cmd:'⌘'} : {ctrl:'Ctrl',alt:'Alt',shift:'Shift',cmd:'Super'};
+  const combo=['ctrl','alt','shift','cmd'].filter(m=>mods.has(m)).map(m=>labels[m]);
+  return IS_MAC ? combo.join('')+key : [...combo,key].join('+');
 }
 
 function keyFromEvent(e) {
@@ -2476,15 +2514,50 @@ document.getElementById('hotkey-cancel').addEventListener('click',()=>{
   document.getElementById('hotkey-backdrop').classList.remove('on');
 });
 
+// Electron doesn't implement window.prompt(), so text input goes through this modal.
+function askText(title, value='') {
+  const back=document.getElementById('text-ask-backdrop');
+  const input=document.getElementById('text-ask-input');
+  const ok=document.getElementById('text-ask-ok');
+  const cancel=document.getElementById('text-ask-cancel');
+  document.getElementById('text-ask-title').textContent=title;
+  input.value=value;
+  back.classList.add('on');
+  setTimeout(()=>{ input.focus(); input.select(); },0);
+  return new Promise(resolve=>{
+    const done=result=>{
+      back.classList.remove('on');
+      ok.onclick=null;
+      cancel.onclick=null;
+      input.onkeydown=null;
+      resolve(result);
+    };
+    ok.onclick=()=>done(input.value.trim());
+    cancel.onclick=()=>done(null);
+    input.onkeydown=e=>{
+      if (e.key==='Enter') done(input.value.trim());
+      if (e.key==='Escape') done(null);
+    };
+  });
+}
+
 function showPrefs() {
-  const nextStroke=prompt('Default stroke size', String(sw));
-  if (nextStroke!==null && Number(nextStroke)>0) { updateStrokeUI(Number(nextStroke)); savePrefs({stroke:sw}); }
-  const nextColor=prompt('Default color hex', color);
-  if (nextColor!==null && /^#[0-9a-f]{6}$/i.test(nextColor)) {
-    color=nextColor; savePrefs({color});
+  const back=document.getElementById('prefs-backdrop');
+  const strokeInput=document.getElementById('prefs-stroke');
+  const colorInput=document.getElementById('prefs-color');
+  strokeInput.value=String(sw);
+  colorInput.value=/^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : '#6c4ef6';
+  back.classList.add('on');
+  const close=()=>back.classList.remove('on');
+  document.getElementById('prefs-cancel').onclick=close;
+  document.getElementById('prefs-save').onclick=()=>{
+    const nextStroke=Number(strokeInput.value);
+    if (nextStroke>0) { updateStrokeUI(nextStroke); savePrefs({stroke:sw}); }
+    color=colorInput.value.toUpperCase(); savePrefs({color});
     document.querySelectorAll('.sw').forEach(x => x.classList.toggle('on', x.dataset.c === color));
-  }
-  toast('Preferences saved');
+    close();
+    toast('Preferences saved');
+  };
 }
 
 function saveAnns() {
@@ -2538,19 +2611,20 @@ function togglePin(filePath) {
 }
 
 function orderGalleryItems(items) {
-  const order = getGalleryOrder();
-  const pins = getGalleryPins();
-  const pinRank = new Map(pins.map((filePath, i) => [filePath, i]));
-  const rank = new Map(order.map((filePath, i) => [filePath, i]));
-  return [...items].sort((a, b) => {
-    const ap = pinRank.has(a.filePath), bp = pinRank.has(b.filePath);
-    if (ap !== bp) return ap ? -1 : 1;
-    if (ap && bp) return pinRank.get(a.filePath) - pinRank.get(b.filePath);
-    const ar = rank.has(a.filePath) ? rank.get(a.filePath) : Number.POSITIVE_INFINITY;
-    const br = rank.has(b.filePath) ? rank.get(b.filePath) : Number.POSITIVE_INFINITY;
-    if (ar !== br) return ar - br;
-    return b.filename.localeCompare(a.filename);
-  });
+  const pinRank = new Map(getGalleryPins().map((filePath, i) => [filePath, i]));
+  const rank = new Map(getGalleryOrder().map((filePath, i) => [filePath, i]));
+  // galleryList() returns newest-first by capture time, so filters below keep that order.
+  const pinned = items.filter(item => pinRank.has(item.filePath))
+    .sort((a, b) => pinRank.get(a.filePath) - pinRank.get(b.filePath));
+  const rest = items.filter(item => !pinRank.has(item.filePath));
+  const ranked = rest.filter(item => rank.has(item.filePath))
+    .sort((a, b) => rank.get(a.filePath) - rank.get(b.filePath));
+  // Captures taken after the last manual reorder go on top; older unranked ones go last.
+  const newestRanked = Math.max(-Infinity, ...ranked.map(item => item.time || 0));
+  const unranked = rest.filter(item => !rank.has(item.filePath));
+  const newer = unranked.filter(item => (item.time || 0) > newestRanked);
+  const older = unranked.filter(item => (item.time || 0) <= newestRanked);
+  return [...pinned, ...newer, ...ranked, ...older];
 }
 
 function moveGalleryItem(dragPath, targetPath) {
@@ -2945,8 +3019,8 @@ async function openGalleryItem(filePath) {
 
 async function renameGalleryItem(item) {
   const currentName = item.filename.replace(/\.[^.]+$/, '');
-  const nextName = prompt('Rename capture', currentName);
-  if (nextName === null) return;
+  const nextName = await askText('Rename capture', currentName);
+  if (!nextName) return;
   const r = await window.electronAPI.galleryRename({ filePath:item.filePath, name:nextName });
   if (!r?.success) { toast(r?.reason === 'exists' ? 'Name already exists' : 'Rename failed'); return; }
   replaceGalleryPath(item.filePath,r.item.filePath);
@@ -3080,9 +3154,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')hideGalleryContext()
 
 async function loadGallery() {
   if (!window.electronAPI) return;
-  const items=await window.electronAPI.galleryList();
-  const q=document.getElementById('gallery-search').value.trim().toLowerCase();
   const assignments=getProjectAssignments();
+  const items=await window.electronAPI.galleryList([...getGalleryPins(), ...Object.keys(assignments)]);
+  const q=document.getElementById('gallery-search').value.trim().toLowerCase();
   const project=activeProject();
   let filtered=project==='all'
     ? items.filter(item=>!assignments[item.filePath])
@@ -3182,6 +3256,29 @@ async function loadGallery() {
       document.querySelectorAll('.gallery-item').forEach(el =>
         el.classList.toggle('current', el.dataset.fp === currentPath));
       syncGallerySelection();
+    });
+
+    // Drop one card on another to reorder. The drag itself is the native file drag above,
+    // so the dragged card comes from galleryDragPath (same as project-row drops).
+    div.addEventListener('dragover', e => {
+      if (!galleryDragPath) return;
+      e.preventDefault();
+      e.stopPropagation();
+      div.classList.add('current');
+    });
+
+    div.addEventListener('dragleave', () => {
+      div.classList.toggle('current', item.filePath === currentPath);
+    });
+
+    div.addEventListener('drop', e => {
+      if (!galleryDragPath) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const dragPath = galleryDragPath;
+      galleryDragPath = null;
+      galleryDragPaths = [];
+      moveGalleryItem(dragPath, item.filePath);
     });
 
     scroll.appendChild(div);

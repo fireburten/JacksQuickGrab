@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; media-src mediastream:; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="fonts/poppins.css">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -154,13 +155,13 @@ body {
   </div>
   <button class="collapse-btn" id="btn-collapse" title="Collapse HUD">‹</button>
 
-  <button class="mode-btn" data-mode="region" title="Capture Region (⌘⇧4)">
+  <button class="mode-btn" data-mode="region" title="Capture Region">
     <span class="ic">⊹</span><span class="lbl">Region</span>
   </button>
-  <button class="mode-btn" data-mode="window" title="Capture Window (⌘⇧W)">
+  <button class="mode-btn" data-mode="window" title="Capture Window">
     <span class="ic">⬚</span><span class="lbl">Window</span>
   </button>
-  <button class="mode-btn" data-mode="full" title="Full Screen (⌘⇧3)">
+  <button class="mode-btn" data-mode="full" title="Full Screen">
     <span class="ic">⛶</span><span class="lbl">Full</span>
   </button>
   <button class="mode-btn" data-mode="scroll" title="Scrolling capture (coming soon)" disabled>
@@ -213,6 +214,47 @@ document.querySelectorAll('.mode-btn:not(:disabled):not([data-mode="record"])').
     if (window.electronAPI) window.electronAPI.hudCapture(btn.dataset.mode);
   });
 });
+
+// ── Shortcut tooltips (user-configurable, so read from main) ──────────────────
+const IS_MAC = /Mac/i.test(navigator.platform || navigator.userAgent);
+const SHORTCUT_TIPS = { region: 'Capture Region', window: 'Capture Window', full: 'Full Screen' };
+const MOD_ORDER = ['ctrl', 'alt', 'shift', 'cmd'];
+const MOD_LABELS = IS_MAC
+  ? { ctrl: '⌃', alt: '⌥', shift: '⇧', cmd: '⌘' }
+  : { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: 'Super' };
+
+function modFromPart(part) {
+  if (/^(CommandOrControl|CmdOrCtrl)$/i.test(part)) return IS_MAC ? 'cmd' : 'ctrl';
+  if (/^(Command|Cmd|Meta|Super)$/i.test(part)) return 'cmd';
+  if (/^(Control|Ctrl)$/i.test(part)) return 'ctrl';
+  if (/^(Alt|Option|AltGr)$/i.test(part)) return 'alt';
+  if (/^Shift$/i.test(part)) return 'shift';
+  return '';
+}
+
+function displayHotkey(accelerator) {
+  const parts = String(accelerator || '').split('+').filter(Boolean);
+  const key = parts.pop();
+  if (!key) return '';
+  const mods = new Set(parts.map(modFromPart));
+  const labels = MOD_ORDER.filter(m => mods.has(m)).map(m => MOD_LABELS[m]);
+  const keyLabel = key === 'Plus' ? '+' : key;
+  return IS_MAC ? labels.join('') + keyLabel : [...labels, keyLabel].join('+');
+}
+
+async function refreshShortcutTips() {
+  let shortcuts = {};
+  try { shortcuts = (await window.electronAPI?.shortcutsGet?.())?.shortcuts || {}; } catch {}
+  Object.entries(SHORTCUT_TIPS).forEach(([mode, label]) => {
+    const btn = document.querySelector(`.mode-btn[data-mode="${mode}"]`);
+    const combo = displayHotkey(shortcuts[mode]);
+    if (btn) btn.title = combo ? `${label} (${combo})` : label;
+  });
+}
+
+refreshShortcutTips();
+// Shortcuts can be changed from the editor while the HUD stays open; refresh before tooltips show.
+hud.addEventListener('mouseenter', refreshShortcutTips);
 
 // ── History ───────────────────────────────────────────────────────────────────
 document.querySelector('.hist-btn').addEventListener('click', () => {

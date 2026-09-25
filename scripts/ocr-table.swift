@@ -26,7 +26,16 @@ let height = CGFloat(cgImage.height)
 let request = VNRecognizeTextRequest()
 request.recognitionLevel = .accurate
 request.usesLanguageCorrection = false  // preserve codes, part numbers, IDs as-is
-request.recognitionLanguages = ["en-US"]
+// macOS 13+: let Vision pick the script/language per observation so non-English
+// text (accented Latin, CJK, Cyrillic, ...) is read. With auto-detect on, Vision
+// chooses the model itself; in testing, also setting recognitionLanguages to every
+// supported language changed nothing, so it's left at its default.
+// macOS 12 has no auto-detect; keep English there so behavior is unchanged.
+if #available(macOS 13.0, *) {
+  request.automaticallyDetectsLanguage = true
+} else {
+  request.recognitionLanguages = ["en-US"]
+}
 
 let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 try? handler.perform([request])

@@ -1,0 +1,62 @@
+name: Mac App Store Build
+
+# Manual only: produces a signed universal .pkg to upload with Transporter.
+#
+# Repository secrets required:
+#   MAS_CERTS_P12             base64 .p12 with the "Apple Distribution" certificate + key
+#   MAS_CERTS_PASSWORD        password for that .p12
+#   MAS_INSTALLER_P12         base64 .p12 with the "Mac Installer Distribution" certificate + key
+#   MAS_INSTALLER_PASSWORD    password for that .p12
+#   MAS_PROVISION_PROFILE     base64 Mac App Store provisioning profile for com.rindworks.jackspicker
+# Create each base64 value with:  base64 -i file.p12 | pbcopy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-mas:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check entitlements have a real Team ID
+        run: |
+          if grep -q '<string>TEAMID\.' build/entitlements.mas.plist; then
+            echo "::error::Replace TEAMID in build/entitlements.mas.plist with your Apple Developer Team ID."
+            exit 1
+          fi
+
+      - name: Check signing secrets are set
+        env:
+          MAS_CERTS_P12: ${{ secrets.MAS_CERTS_P12 }}
+          MAS_INSTALLER_P12: ${{ secrets.MAS_INSTALLER_P12 }}
+          MAS_PROVISION_PROFILE: ${{ secrets.MAS_PROVISION_PROFILE }}
+        run: |
+          for name in MAS_CERTS_P12 MAS_INSTALLER_P12 MAS_PROVISION_PROFILE; do
+            if [ -z "${!name}" ]; then echo "::error::Missing repository secret $name"; exit 1; fi
+          done
+
+      - name: Install provisioning profile
+        env:
+          MAS_PROVISION_PROFILE: ${{ secrets.MAS_PROVISION_PROFILE }}
+        run: echo "$MAS_PROVISION_PROFILE" | base64 --decode > build/embedded.provisionprofile
+
+      - run: npm ci
+
+      # CFBundleVersion must increase with every upload, so use the run number.
+      - name: Build signed .pkg
+        env:
+          CSC_LINK: ${{ secrets.MAS_CERTS_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAS_CERTS_PASSWORD }}
+          CSC_INSTALLER_LINK: ${{ secrets.MAS_INSTALLER_P12 }}
+          CSC_INSTALLER_KEY_PASSWORD: ${{ secrets.MAS_INSTALLER_PASSWORD }}
+        run: npm run build:mas -- -c.buildVersion=${{ github.run_number }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mas-pkg
+          path: dist/**/*.pkg
+          if-no-files-found: error

@@ -1,7 +1,7 @@
 const {
   app, BrowserWindow, Tray, Menu, globalShortcut,
   ipcMain, screen, clipboard, nativeImage, dialog, shell,
-  desktopCapturer, systemPreferences,
+  desktopCapturer, systemPreferences, ShareMenu,
 } = require('electron');
 const path    = require('path');
 const fs      = require('fs');
@@ -15,19 +15,35 @@ let editorWin  = null;
 let tray       = null;
 let windowPickerWin = null;
 let lastRegionRect = null;
+// Display the region overlay was opened on; rects from it are relative to that display,
+// so repeat-region and recording must target it rather than the primary display.
+let regionDisplay = null;
+let lastRegionDisplayId = null;
+let recordingDisplayId = null;
 let recordingMode  = false;
 
-const SAVE_DIR = path.join(os.homedir(), 'Documents', "Jack's Picker");
+const IS_MAS = !!process.mas;
+// The App Store sandbox points os.homedir() at the app container, so MAS builds
+// save to the real ~/Pictures (granted by the assets.pictures entitlement).
+const SAVE_DIR = IS_MAS
+  ? path.join(os.userInfo().homedir, 'Pictures', "Jack's Picker")
+  : path.join(os.homedir(), 'Documents', "Jack's Picker");
 const LEGACY_SAVE_DIR = path.join(os.homedir(), 'Documents', "Jack's Quick Grab");
 const ANNOTATION_DIR = path.join(SAVE_DIR, '.annotations');
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
 const DEFAULT_SHORTCUTS = {
   region: 'CommandOrControl+Shift+2',
-  repeat: 'CommandOrControl+Shift+5',
-  window: 'CommandOrControl+Shift+W',
-  full: 'CommandOrControl+Shift+3',
+  repeat: 'CommandOrControl+Alt+Shift+2',
+  window: 'CommandOrControl+Alt+Shift+W',
+  full: 'CommandOrControl+Shift+1',
 };
-const MACOS_REGION_SHORTCUT = 'CommandOrControl+Shift+4';
+// macOS owns ⌘⇧3 / ⌘⇧4 / ⌘⇧5 for its own screenshot tools.
+const MACOS_RESERVED_SHORTCUTS = new Set([
+  'CommandOrControl+Shift+3',
+  'CommandOrControl+Shift+4',
+  'CommandOrControl+Shift+5',
+]);
+const RECORDING_EXTS = new Set(['mp4', 'webm']);
 
 function readSettings() {
   try { return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')); }
@@ -43,7 +59,11 @@ function writeSettings(next) {
 
 function readShortcuts() {
   const shortcuts = { ...DEFAULT_SHORTCUTS, ...(readSettings().shortcuts || {}) };
-  if (shortcuts.region === MACOS_REGION_SHORTCUT) shortcuts.region = DEFAULT_SHORTCUTS.region;
+  if (process.platform === 'darwin') {
+    Object.keys(shortcuts).forEach(kind => {
+      if (MACOS_RESERVED_SHORTCUTS.has(shortcuts[kind])) shortcuts[kind] = DEFAULT_SHORTCUTS[kind];
+    });
+  }
   return shortcuts;
 }
 
@@ -126,15 +146,42 @@ function writeDataURLTemp(imageDataURL, ext = 'png') {
   return tmp;
 }
 
-function ocrScriptPath(filename = 'ocr.swift') {
+// macOS: precompiled Vision helpers in bin/ (built by scripts/build-ocr.sh).
+// Windows: PowerShell script in scripts/.
+function ocrHelperPath(kind) {
+  const [dir, filename] = process.platform === 'win32'
+    ? ['scripts', 'ocr-table.ps1']
+    : ['bin', kind === 'table' ? 'ocr-table' : 'ocr'];
   if (app.isPackaged) {
-    // Scripts are unpacked outside the ASAR so child processes can read them directly.
-    return path.join(process.resourcesPath, 'app.asar.unpacked', 'scripts', filename);
+    // Helpers are unpacked outside the ASAR so child processes can read them directly.
+    return path.join(process.resourcesPath, 'app.asar.unpacked', dir, filename);
   }
-  return path.join(__dirname, 'scripts', filename);
+  return path.join(__dirname, dir, filename);
+}
+
+// Share and drag-out write screenshot copies to the temp dir that nothing else removes.
+// They must outlive the share/drag itself (the receiving app may read them later), so
+// sweep ones older than a day on launch.
+const TEMP_EXPORT_PREFIXES = ['jqg-share-', 'jqg-export-'];
+const TEMP_EXPORT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function cleanupTempExports() {
+  const tmp = os.tmpdir();
+  const cutoff = Date.now() - TEMP_EXPORT_MAX_AGE_MS;
+  try {
+    fs.readdirSync(tmp)
+      .filter(name => TEMP_EXPORT_PREFIXES.some(prefix => name.startsWith(prefix)))
+      .forEach(name => {
+        const p = path.join(tmp, name);
+        try {
+          if (fs.statSync(p).mtimeMs < cutoff) fs.rmSync(p, { recursive: true, force: true });
+        } catch {}
+      });
+  } catch {}
 }
 
 function migrateLegacySaveDir() {
+  if (IS_MAS) return; // sandbox can't reach ~/Documents
   try {
     if (fs.existsSync(LEGACY_SAVE_DIR) && !fs.existsSync(SAVE_DIR)) {
       fs.renameSync(LEGACY_SAVE_DIR, SAVE_DIR);
@@ -182,8 +229,19 @@ function buildTrayMenu() {
     { label: 'Show / Hide HUD', click: toggleHUD },
     { label: 'Open Captures Folder', click: () => shell.openPath(SAVE_DIR) },
     { type: 'separator' },
+    // Off by default: App Review requires the user to opt in to launching at login.
+    // Disabled in dev so the bare Electron binary doesn't get registered.
+    { label: 'Launch at Login', type: 'checkbox', enabled: app.isPackaged, checked: app.getLoginItemSettings().openAtLogin, click: item => app.setLoginItemSettings({ openAtLogin: item.checked }) },
+    { label: "About Jack's Picker", click: showAbout },
+    { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]);
+}
+
+function showAbout() {
+  // No Dock icon, so bring the app forward or the panel opens behind other windows.
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  app.showAboutPanel();
 }
 
 // ── HUD window ────────────────────────────────────────────────────────────────
@@ -208,7 +266,7 @@ function createHUD() {
   // Auto-grant display media for screen recording from the HUD
   hudWindow.webContents.session.setDisplayMediaRequestHandler(async (_request, callback) => {
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
-    callback({ video: sources[0] });
+    callback({ video: sources.find(s => String(s.display_id) === String(recordingDisplayId)) || sources[0] });
   });
 }
 
@@ -218,11 +276,11 @@ function toggleHUD() {
 }
 
 // ── screencapture wrapper ─────────────────────────────────────────────────────
-// Uses the macOS built-in /usr/sbin/screencapture which has system-level screen
-// access and requires no TCC permission from this app.
+// Fallback to /usr/sbin/screencapture when desktopCapturer returns nothing.
+// Unavailable inside the App Store sandbox, which can't launch it.
 
 async function runScreencapture(flags) {
-  if (process.platform !== 'darwin') return null;
+  if (process.platform !== 'darwin' || IS_MAS) return null;
   const tmpFile = path.join(os.tmpdir(), `jqg-${Date.now()}.png`);
   await new Promise(resolve => {
     execFile('/usr/sbin/screencapture', [...flags, tmpFile], () => resolve());
@@ -307,7 +365,7 @@ function maybeShowScreenPermissionHelp() {
       defaultId: 0,
       cancelId: 1,
       message: 'Screen Recording permission is needed',
-      detail: "If captures show only the desktop background, allow Jack's Picker, Electron, or your terminal app in System Settings → Privacy & Security → Screen Recording, then restart the app.",
+      detail: "If captures show only the desktop background, allow Jack's Picker in System Settings → Privacy & Security → Screen & System Audio Recording, then restart the app.",
     }).then(({ response }) => {
       if (response === 0) {
         shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
@@ -316,9 +374,10 @@ function maybeShowScreenPermissionHelp() {
   }
 }
 
+// Returns true when the welcome dialog was shown, so the permission help isn't stacked on top.
 function showFirstRunOnboarding() {
   const settings = readSettings();
-  if (settings.onboardingSeen) return;
+  if (settings.onboardingSeen) return false;
   writeSettings({ onboardingSeen: true });
   const isMac = process.platform === 'darwin';
   const permissionNote = isMac
@@ -331,13 +390,14 @@ function showFirstRunOnboarding() {
     cancelId: isMac ? 1 : 0,
     message: "Welcome to Jack's Picker",
     detail: [
-      'Use the system tray icon for region, window, full-screen, delayed, and repeat-region captures.',
+      `Use the ${isMac ? 'menu bar' : 'system tray'} icon for region, window, full-screen, delayed, and repeat-region captures.`,
       'Use the editor sidebar for history, search, pins, rename, reveal, and delete.',
       permissionNote,
     ].join('\n\n'),
   }).then(({ response }) => {
     if (isMac && response === 0) shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
   }).catch(() => {});
+  return true;
 }
 
 // ── Capture flow ──────────────────────────────────────────────────────────────
@@ -451,7 +511,8 @@ async function captureLastRegion() {
   if (!lastRegionRect) return;
   if (hudWindow && !hudWindow.isDestroyed()) hudWindow.hide();
   await delay(120);
-  const dataURL = await capturePrimaryScreen();
+  const display = screen.getAllDisplays().find(d => d.id === lastRegionDisplayId) || screen.getPrimaryDisplay();
+  const dataURL = (await captureDisplayPayload(display))?.screens?.[0]?.dataURL;
   if (!dataURL) { showHUD(); return; }
   const img = nativeImage.createFromDataURL(dataURL);
   const cropped = img.crop({
@@ -467,6 +528,7 @@ async function openRegionOverlay() {
   // Start capture first so the overlay does not appear in its own screenshot.
   const cursor = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursor);
+  regionDisplay = display;
   const bounds = display.bounds;
   const payloadPromise = captureDisplayPayload(display);
   captureWin = new BrowserWindow({
@@ -575,6 +637,7 @@ ipcMain.on('hud-history', () => {
 });
 
 ipcMain.handle('save-recording', async (_e, buffer, ext) => {
+  if (!RECORDING_EXTS.has(ext)) return null;
   const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
   const filename = `recording-${ts}.${ext}`;
   const filePath = path.join(SAVE_DIR, filename);
@@ -596,12 +659,18 @@ ipcMain.handle('shortcuts-get', () => ({
 
 ipcMain.handle('shortcuts-set', (_e, shortcuts) => {
   const cleaned = {};
+  const failures = [];
   Object.keys(DEFAULT_SHORTCUTS).forEach(kind => {
     const value = String(shortcuts?.[kind] || '').trim();
+    if (process.platform === 'darwin' && MACOS_RESERVED_SHORTCUTS.has(value)) {
+      failures.push({ kind, accelerator: value, reason: 'reserved' });
+      cleaned[kind] = DEFAULT_SHORTCUTS[kind];
+      return;
+    }
     cleaned[kind] = value || DEFAULT_SHORTCUTS[kind];
   });
   writeSettings({ shortcuts: cleaned });
-  const failures = registerCaptureShortcuts();
+  failures.push(...registerCaptureShortcuts());
   return { success: failures.length === 0, shortcuts: readShortcuts(), failures };
 });
 
@@ -609,7 +678,8 @@ ipcMain.on('capture-done', (_e, { imageDataURL, rect }) => {
   if (recordingMode) {
     recordingMode = false;
     if (rect) {
-      const display = screen.getPrimaryDisplay();
+      const display = regionDisplay || screen.getPrimaryDisplay();
+      recordingDisplayId = display.id;
       const sf = display.scaleFactor || 1;
       const logicalRect = {
         x: Math.round(rect.x / sf), y: Math.round(rect.y / sf),
@@ -632,7 +702,10 @@ ipcMain.on('capture-done', (_e, { imageDataURL, rect }) => {
     return;
   }
   closeCaptureWin();
-  if (rect) lastRegionRect = rect;
+  if (rect) {
+    lastRegionRect = rect;
+    lastRegionDisplayId = regionDisplay?.id ?? null;
+  }
   finishCapture(imageDataURL, rect);
 });
 
@@ -674,76 +747,54 @@ ipcMain.handle('image-overwrite', (_e, { filePath, imageDataURL }) => {
   }
 });
 
-ipcMain.handle('share-image', async (_e, { imageDataURL, filename }) => {
+ipcMain.handle('share-image', async (event, { imageDataURL, filename }) => {
   try {
-    const filePath = writeDataURLTemp(imageDataURL, /\.jpe?g$/i.test(filename || '') ? 'jpg' : 'png');
+    // Own temp dir so the shared file keeps a readable name (recipients see it).
+    const ext = /\.jpe?g$/i.test(filename || '') ? '.jpg' : '.png';
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jqg-share-'));
+    const filePath = path.join(dir, safeCaptureName(filename, ext));
+    const data = imageDataURL.replace(/^data:image\/\w+;base64,/, '');
+    fs.writeFileSync(filePath, Buffer.from(data, 'base64'));
+    if (process.platform === 'darwin') {
+      new ShareMenu({ filePaths: [filePath] }).popup({ window: BrowserWindow.fromWebContents(event.sender) });
+      return { success: true, filePath, sheet: true };
+    }
     clipboard.writeImage(nativeImage.createFromPath(filePath));
     shell.showItemInFolder(filePath);
     return { success: true, filePath };
   } catch { return { success: false }; }
 });
 
-function runOCRScript(scriptFile, tmp, swiftEnv) {
+function runOCRHelper(helper, tmp) {
+  const [cmd, args] = process.platform === 'win32'
+    ? ['powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helper, tmp]]
+    : [helper, [tmp]];
   return new Promise((resolve, reject) => {
-    if (process.platform === 'darwin') {
-      execFile('/usr/bin/swift', [scriptFile, tmp], {
-        maxBuffer: 1024 * 1024 * 8,
-        env: swiftEnv,
-      }, (err, stdout, stderr) => {
-        if (err) reject(new Error(stderr || err.message));
-        else resolve(stdout);
-      });
-    } else {
-      execFile('powershell.exe', [
-        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-        '-File', scriptFile, tmp,
-      ], {
-        maxBuffer: 1024 * 1024 * 8,
-      }, (err, stdout, stderr) => {
-        if (err) reject(new Error(stderr || err.message));
-        else resolve(stdout);
-      });
-    }
+    execFile(cmd, args, { maxBuffer: 1024 * 1024 * 8 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(stderr || err.message));
+      else resolve(stdout);
+    });
   });
 }
 
-ipcMain.handle('ocr-image', async (_e, { imageDataURL }) => {
+async function runOCR(kind, imageDataURL) {
   if (process.platform !== 'darwin' && process.platform !== 'win32')
     return { success: false, error: 'OCR is only supported on macOS and Windows' };
+  const helper = ocrHelperPath(kind);
+  if (!fs.existsSync(helper)) return { success: false, error: 'OCR helper missing' };
   const tmp = writeDataURLTemp(imageDataURL, 'png');
   try {
-    const scriptFile = process.platform === 'win32'
-      ? ocrScriptPath('ocr-table.ps1')
-      : ocrScriptPath('ocr.swift');
-    if (!fs.existsSync(scriptFile)) return { success: false, error: 'OCR helper missing' };
-    const swiftEnv = { ...process.env, CLANG_MODULE_CACHE_PATH: path.join(os.tmpdir(), 'jqg-swift-cache') };
-    const out = await runOCRScript(scriptFile, tmp, swiftEnv);
+    const out = await runOCRHelper(helper, tmp);
     return { success: true, items: JSON.parse(out || '[]') };
   } catch (err) {
     return { success: false, error: err.message };
   } finally {
     try { fs.unlinkSync(tmp); } catch {}
   }
-});
+}
 
-ipcMain.handle('ocr-table-image', async (_e, { imageDataURL }) => {
-  if (process.platform !== 'darwin' && process.platform !== 'win32')
-    return { success: false, error: 'OCR is only supported on macOS and Windows' };
-  const tmp = writeDataURLTemp(imageDataURL, 'png');
-  try {
-    const scriptFile = process.platform === 'win32'
-      ? ocrScriptPath('ocr-table.ps1')
-      : ocrScriptPath('ocr-table.swift');
-    if (!fs.existsSync(scriptFile)) return { success: false, error: 'OCR helper missing' };
-    const swiftEnv = { ...process.env, CLANG_MODULE_CACHE_PATH: path.join(os.tmpdir(), 'jqg-swift-cache') };
-    const out = await runOCRScript(scriptFile, tmp, swiftEnv);
-    return { success: true, items: JSON.parse(out || '[]') };
-  } catch (err) {
-    return { success: false, error: err.message };
-  } finally {
-    try { fs.unlinkSync(tmp); } catch {}
-  }
-});
+ipcMain.handle('ocr-image', (_e, { imageDataURL }) => runOCR('text', imageDataURL));
+ipcMain.handle('ocr-table-image', (_e, { imageDataURL }) => runOCR('table', imageDataURL));
 
 ipcMain.on('editor-close', () => {
   if (editorWin && !editorWin.isDestroyed()) editorWin.close();
@@ -778,19 +829,37 @@ ipcMain.on('open-screen-settings', () => {
   }
 });
 
-ipcMain.handle('gallery-list', () => {
+// Newest first by creation time, not filename: renamed captures no longer sort like
+// `screenshot-<timestamp>`, and birthtime survives both renames and annotation overwrites.
+function captureTime(filePath) {
   try {
-    return fs.readdirSync(SAVE_DIR)
+    const stat = fs.statSync(filePath);
+    return stat.birthtimeMs || stat.mtimeMs;
+  } catch { return 0; }
+}
+
+const GALLERY_RECENT_LIMIT = 30;
+
+// `include` lists captures the renderer always needs regardless of age (pinned or
+// assigned to a project), since those live in renderer localStorage.
+ipcMain.handle('gallery-list', (_e, include = []) => {
+  try {
+    const all = fs.readdirSync(SAVE_DIR)
       .filter(f => /\.(png|jpg|jpeg)$/i.test(f))
-      .sort()
-      .reverse()
-      .slice(0, 30)
-      .map(filename => galleryPayload(path.join(SAVE_DIR, filename)));
+      .map(filename => path.join(SAVE_DIR, filename))
+      .map(filePath => ({ filePath, time: captureTime(filePath) }))
+      .sort((a, b) => b.time - a.time);
+    const wanted = new Set((Array.isArray(include) ? include : []).map(safeCapturePath).filter(Boolean));
+    return all
+      .filter((entry, i) => i < GALLERY_RECENT_LIMIT || wanted.has(entry.filePath))
+      .map(({ filePath, time }) => ({ ...galleryPayload(filePath), time }));
   } catch { return []; }
 });
 
 ipcMain.handle('gallery-load', (_e, filePath) => {
   try {
+    filePath = safeCapturePath(filePath);
+    if (!filePath) return null;
     const dataURL = nativeImage.createFromPath(filePath).toDataURL();
     const annPath = annotationPathFor(filePath);
     const legacyAnnPath = legacyAnnotationPathFor(filePath);
@@ -923,14 +992,25 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
+// Renderers only ever show bundled pages; block popups and navigation away from them.
+app.on('web-contents-created', (_e, contents) => {
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  contents.on('will-navigate', e => e.preventDefault());
+});
+
 app.whenReady().then(() => {
   migrateLegacySaveDir();
   fs.mkdirSync(SAVE_DIR, { recursive: true });
   fs.mkdirSync(ANNOTATION_DIR, { recursive: true });
   migrateLegacyAnnotations();
-  showFirstRunOnboarding();
-  maybeShowScreenPermissionHelp();
+  cleanupTempExports();
+  if (!showFirstRunOnboarding()) maybeShowScreenPermissionHelp();
   if (process.platform === 'darwin') app.dock.hide();
+  app.setAboutPanelOptions({
+    applicationName: "Jack's Picker",
+    applicationVersion: app.getVersion(),
+    copyright: 'Copyright © 2026 Rind Works',
+  });
   createTray();
   createHUD();
   registerCaptureShortcuts();
