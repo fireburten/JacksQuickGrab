@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: file:; media-src file:; base-uri 'none'; form-action 'none'">
 <link rel="stylesheet" href="fonts/poppins.css">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -59,6 +59,11 @@ html, body {
 .project-row:hover { background:rgba(255,255,255,.05); color:rgba(255,255,255,.68); }
 .project-row.active { background:rgba(108,78,246,.2); color:#fff; border-color:rgba(108,78,246,.32); }
 .project-row.drop { border-color:#FBBF24; background:rgba(251,191,36,.12); }
+.project-row .project-folder { margin-left:auto; font-size:10px; color:rgba(255,255,255,.4); max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.project-row .project-folder.missing { color:#fbbf24; }
+.project-menu-btn { border:0; background:transparent; color:rgba(255,255,255,.45); cursor:pointer; padding:0 4px; font-size:13px; line-height:1; border-radius:4px; }
+.project-menu-btn:hover { background:rgba(255,255,255,.1); color:#fff; }
+.folder-badge { position:absolute; right:4px; bottom:4px; padding:1px 4px; border-radius:4px; font-size:9px; background:rgba(0,0,0,.62); pointer-events:none; }
 .project-name { flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .project-delete {
   width:18px;height:18px;border:0;border-radius:5px;background:transparent;
@@ -194,6 +199,168 @@ html, body {
 .gallery-item.current { border-color: #6C4EF6; }
 .gallery-item.selected { border-color:#22C55E; background:rgba(34,197,94,.1); }
 .gallery-item img { width: 100%; display: block; cursor: alias; }
+.gallery-thumb { position: relative; }
+.gallery-thumb-empty {
+  aspect-ratio: 16 / 10; display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: rgba(255,255,255,.35); background: rgba(255,255,255,.05);
+}
+.media-badge {
+  position: absolute; left: 4px; bottom: 4px; padding: 1px 5px; border-radius: 4px;
+  font-size: 8.5px; font-weight: 700; letter-spacing: .04em; color: #fff;
+  background: rgba(0,0,0,.62); pointer-events: none;
+}
+.media-viewer {
+  position: fixed; inset: 0; z-index: 950; display: none; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; padding: 48px 24px 24px;
+  background: rgba(8,5,20,.9);
+}
+.media-viewer.on { display: flex; }
+.media-viewer-stage { max-width: 100%; max-height: calc(100% - 40px); display: flex; }
+.media-viewer-stage video, .media-viewer-stage img {
+  max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; background: #000;
+}
+.media-viewer-bar { display: flex; align-items: center; gap: 10px; color: rgba(255,255,255,.7); font-size: 12px; }
+.media-viewer-bar button {
+  padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06); color: #fff; font: inherit; cursor: pointer;
+}
+.media-viewer-bar button:hover { background: rgba(108,78,246,.3); }
+.media-viewer [hidden] { display: none !important; }
+.video-dock {
+  order: 2; display: flex; flex-direction: column; gap: 8px; padding: 10px 14px 12px;
+  background: #140e2b; border-top: 1px solid rgba(255,255,255,.06);
+}
+.video-dock[hidden], .video-dock [hidden] { display: none !important; }
+.media-seg { position: absolute; top: 0; bottom: 0; }
+.media-seg + .media-seg { box-shadow: inset 2px 0 0 #140e2b; }   /* gap between clips */
+/* Handles sit inside their own clip, so where two clips meet, one clip's end handle and
+   the next clip's start handle don't overlap. */
+.media-seg .media-timeline-handle.start { margin-left: 0; }
+.media-seg .media-timeline-handle.end { margin-left: -10px; }
+.media-seg-label { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); font-size: 10px; font-weight: 700; color: rgba(255,255,255,.75); pointer-events: none; }
+.media-clips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.media-clips-list { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.media-clip-chip {
+  display: inline-flex; align-items: center; gap: 2px; max-width: 280px; padding: 2px 4px 2px 9px;
+  border-radius: 8px; background: rgba(108,78,246,.18); border: 1px solid rgba(108,78,246,.4);
+  font-size: 11px; color: rgba(255,255,255,.85);
+}
+.media-clip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 4px; }
+.media-clip-chip button, .media-clips > button {
+  border: 0; background: transparent; color: rgba(255,255,255,.7); font: inherit; cursor: pointer;
+  padding: 2px 5px; border-radius: 5px;
+}
+.media-clip-chip button:hover { background: rgba(255,255,255,.12); color: #fff; }
+.media-clips > button { border: 1px dashed rgba(255,255,255,.25); padding: 3px 10px; font-size: 11px; }
+.media-clips > button:hover { border-color: #6c4ef6; color: #fff; }
+.media-clips button:disabled { opacity: .4; cursor: default; }
+.clip-picker-box { width: min(900px, calc(100vw - 32px)); }
+.clip-picker-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.clip-picker-search { flex: 1; min-width: 180px; margin: 0; }
+.clip-picker-seg { display: inline-flex; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; overflow: hidden; }
+.clip-picker-seg button { border: 0; background: transparent; color: rgba(255,255,255,.65); font: inherit; font-size: 12px; padding: 6px 11px; cursor: pointer; }
+.clip-picker-seg button.on { background: rgba(108,78,246,.45); color: #fff; }
+.clip-picker-tools select {
+  padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06); color: #fff; font: inherit; font-size: 12px;
+}
+.clip-picker-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px;
+  height: min(52vh, 460px); overflow-y: auto; align-content: start; margin-bottom: 12px; padding: 2px;
+}
+.clip-picker-item {
+  position: relative; display: flex; flex-direction: column; gap: 3px; padding: 6px; border-radius: 9px; cursor: pointer;
+  border: 2px solid transparent; background: rgba(255,255,255,.04); color: rgba(255,255,255,.8);
+  font: inherit; font-size: 11px; text-align: left;
+}
+.clip-picker-item:hover { background: rgba(108,78,246,.14); }
+.clip-picker-item.selected { border-color: #6c4ef6; background: rgba(108,78,246,.2); }
+.clip-picker-thumb {
+  position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: 6px; overflow: hidden;
+  background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,.3); font-size: 20px;
+}
+.clip-picker-thumb img, .clip-picker-thumb video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.clip-picker-num {
+  position: absolute; top: 5px; right: 5px; z-index: 2; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  background: #6c4ef6; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 2px #120c28;
+}
+.clip-picker-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clip-picker-meta { font-size: 10px; color: rgba(255,255,255,.42); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clip-picker-empty { grid-column: 1 / -1; font-size: 12px; color: rgba(255,255,255,.5); padding: 20px 4px; }
+.clip-picker-foot { display: flex; align-items: center; gap: 12px; }
+.clip-picker-hint { flex: 1; font-size: 11px; color: rgba(255,255,255,.45); }
+.clip-picker-foot .choice-actions { flex-shrink: 0; }
+.clip-picker-foot .clip-picker-primary { background: #6c4ef6; color: #fff; font-weight: 600; }
+.clip-picker-foot .choice-actions button { white-space: nowrap; }
+.clip-picker-thumb .media-badge { z-index: 1; }   /* stays above the hover preview */
+.clip-picker-foot .clip-picker-primary:disabled { opacity: .45; cursor: default; }
+body.video-mode .image-only, body.video-mode #canvas-resize-handle { display: none !important; }
+.media-crop-layer { position: absolute; overflow: hidden; z-index: 6; cursor: crosshair; }
+.media-crop-layer[hidden] { display: none; }
+.media-crop-box {
+  position: absolute; border: 2px solid #fff; cursor: move;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,.55);
+}
+.media-crop-size {
+  position: absolute; left: 0; top: -20px; padding: 1px 6px; border-radius: 4px;
+  font-size: 10px; color: #fff; background: rgba(108,78,246,.9); white-space: nowrap;
+}
+.media-timeline {
+  position: relative; height: 26px; border-radius: 6px; cursor: pointer;
+  background: rgba(255,255,255,.08); touch-action: none;
+}
+.media-timeline-range { position: absolute; top: 0; bottom: 0; background: rgba(108,78,246,.35); border-radius: 6px; }
+.media-timeline-handle {
+  position: absolute; top: -2px; bottom: -2px; width: 10px; margin-left: -5px; border-radius: 4px;
+  background: #6c4ef6; cursor: ew-resize; box-shadow: 0 0 0 2px rgba(255,255,255,.7);
+}
+.media-ann-lane { display: flex; flex-direction: column; gap: 3px; max-height: 76px; overflow-y: auto; margin-top: -2px; }
+.media-ann-lane:empty::before {
+  content: 'Annotations you draw appear here: click one to select it, drag its ends to set when it shows.';
+  font-size: 10px; color: rgba(255,255,255,.3);
+}
+.media-ann-row { position: relative; height: 12px; flex-shrink: 0; border-radius: 6px; background: rgba(255,255,255,.035); }
+.media-ann-bar {
+  position: absolute; top: 0; bottom: 0; min-width: 6px; border-radius: 6px; cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.35); overflow: visible;
+  font-size: 9px; line-height: 12px; color: #fff; padding-left: 5px; white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,.8);
+}
+.media-ann-bar.whole { opacity: .45; }
+.media-ann-bar.selected { opacity: 1; box-shadow: 0 0 0 2px #fff; }
+.media-ann-bar.selected.timed { cursor: grab; }
+.media-ann-bar .media-ann-handle {
+  position: absolute; top: 0; bottom: 0; width: 8px; border-radius: 3px;
+  background: #fff; cursor: ew-resize; box-shadow: 0 0 0 1px rgba(0,0,0,.5);
+}
+/* Inside the bar's ends: a full-width bar's handles would otherwise be clipped by the lane. */
+.media-ann-bar .media-ann-handle.start { left: 0; }
+.media-ann-bar .media-ann-handle.end { right: 0; }
+.media-ann-bar.selected { min-width: 18px; padding-left: 11px; }
+.insp-timing { margin-top: 10px; }
+.insp-timing[hidden], .insp-time-range[hidden] { display: none; }
+.insp-time-range { margin-top: 6px; display: flex; flex-direction: column; gap: 5px; }
+.insp-time { flex: 1; font-size: 11px; color: rgba(255,255,255,.7); font-variant-numeric: tabular-nums; }
+.ibtn.on { background: rgba(108,78,246,.45); color: #fff; }
+.media-timeline-playhead { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: #fff; pointer-events: none; }
+.media-edit-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: rgba(255,255,255,.7); font-size: 12px; }
+.media-edit-row button, .media-edit-row select, .media-progress button {
+  padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06); color: #fff; font: inherit; cursor: pointer;
+}
+.media-edit-row button:hover, .media-progress button:hover { background: rgba(108,78,246,.3); }
+.media-edit-row button.on { background: rgba(108,78,246,.55); border-color: #6c4ef6; }
+.media-edit-row button:disabled { opacity: .45; cursor: default; }
+.media-edit-row .media-primary { background: #6c4ef6; border-color: #6c4ef6; font-weight: 600; }
+.media-edit-time { font-variant-numeric: tabular-nums; min-width: 150px; }
+.media-edit-sep { width: 1px; height: 18px; background: rgba(255,255,255,.12); }
+.media-edit-grow { flex: 1; }
+.media-gif-opts { display: inline-flex; gap: 6px; }
+.media-progress { display: flex; align-items: center; gap: 10px; color: rgba(255,255,255,.75); font-size: 12px; }
+.media-progress-track { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+.media-progress-bar { height: 100%; width: 0; background: #6c4ef6; transition: width .1s; }
 .gallery-item-name {
   font-size: 8.5px; color: rgba(255,255,255,.26);
   padding: 3px 5px 4px;
@@ -401,7 +568,7 @@ html, body {
 .abtn-close { background:rgba(255,255,255,.05);color:rgba(255,255,255,.4);margin-left:auto; }
 
 .props {
-  position:fixed;bottom:62px;left:50%;transform:translateX(-50%);
+  position:fixed;bottom:calc(62px + var(--video-dock-h, 0px));left:50%;transform:translateX(-50%);
   background:rgba(14,10,31,.85);border:1px solid rgba(255,255,255,.05);
   border-radius:10px;padding:5px 14px;
   display:flex;gap:12px;align-items:center;
@@ -456,7 +623,7 @@ body.crop-mode .crop-actions { display:flex; }
 .crop-actions button.primary { background:#6C4EF6;color:#fff; }
 
 .toast {
-  position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+  position:fixed;bottom:calc(90px + var(--video-dock-h, 0px));left:50%;transform:translateX(-50%);
   background:rgba(34,197,94,.92);color:#fff;
   font-family:inherit;font-size:13px;font-weight:600;
   padding:9px 20px;border-radius:10px;
@@ -533,6 +700,7 @@ body.crop-mode .crop-actions { display:flex; }
   <div class="canvas-wrap" id="cw">
     <canvas id="c"></canvas>
     <div class="canvas-resize-handle" id="canvas-resize-handle" title="Resize canvas"></div>
+    <div class="media-crop-layer" id="media-crop-layer" hidden></div>
     <div class="props">
       <span>Stroke: <strong id="p-stroke">15px</strong></span>
       <span>Opacity: <strong>100%</strong></span>
@@ -559,6 +727,17 @@ body.crop-mode .crop-actions { display:flex; }
       <input type="range" id="insp-opacity" min="10" max="100" value="100">
       <label>Text Size</label>
       <input type="range" id="insp-text-size" min="8" max="220" value="42">
+      <div class="insp-timing" id="insp-timing" hidden>
+        <label>Show during</label>
+        <div class="inspector-row">
+          <button class="ibtn" id="insp-time-all">Whole video</button>
+          <button class="ibtn" id="insp-time-part">Part of it</button>
+        </div>
+        <div class="insp-time-range" id="insp-time-range">
+          <div class="inspector-row"><span class="insp-time" id="insp-t0"></span><button class="ibtn" id="insp-t0-set" title="Start at the playhead">Start here</button></div>
+          <div class="inspector-row"><span class="insp-time" id="insp-t1"></span><button class="ibtn" id="insp-t1-set" title="End at the playhead">End here</button></div>
+        </div>
+      </div>
       <div class="inspector-row" style="margin-top:8px">
         <button class="ibtn" id="insp-back">Back</button>
         <button class="ibtn" id="insp-forward">Forward</button>
@@ -571,6 +750,49 @@ body.crop-mode .crop-actions { display:flex; }
         <button class="ibtn danger" id="insp-delete">Delete</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="video-dock" id="video-dock" hidden>
+  <div class="media-clips">
+    <div class="media-clips-list" id="media-clips"></div>
+    <button id="media-add-clip" type="button" title="Add a GIF or recording after the last clip">+ Add clip</button>
+  </div>
+  <div class="media-timeline" id="media-timeline" title="Click or drag to scrub; drag the handles to trim">
+    <div id="media-segments"></div>
+    <div class="media-timeline-playhead" id="media-playhead"></div>
+  </div>
+  <div class="media-ann-lane" id="media-ann-lane"></div>
+  <div class="media-edit-row">
+    <button id="media-play" type="button">▶ Play</button>
+    <button id="media-mute" type="button" hidden title="Mute preview (exports keep the sound)">🔊</button>
+    <span class="media-edit-time" id="media-time"></span>
+    <span class="media-edit-sep"></span>
+    <button id="media-crop-toggle" type="button">Crop</button>
+    <button id="media-crop-reset" type="button" hidden>Reset crop</button>
+    <span class="media-edit-sep"></span>
+    <button id="media-frame" type="button" title="Open the current frame, with annotations, as a screenshot">Frame → Screenshot</button>
+    <span class="media-edit-grow"></span>
+    <label>Save as
+      <select id="media-format"><option value="mp4">MP4</option><option value="gif">GIF</option></select>
+    </label>
+    <span class="media-gif-opts" id="media-gif-opts">
+      <select id="media-gif-width" title="GIF width">
+        <option value="480">480 px</option><option value="640">640 px</option>
+        <option value="800" selected>800 px</option><option value="1200">1200 px</option>
+        <option value="100000">Original</option>
+      </select>
+      <select id="media-gif-fps" title="GIF frame rate">
+        <option value="10">10 fps</option><option value="15" selected>15 fps</option><option value="20">20 fps</option>
+      </select>
+    </span>
+    <button id="media-export" class="media-primary" type="button">Export</button>
+    <button id="video-dock-close" type="button" title="Close the video editor (unsaved edits are discarded)">✕ Close video</button>
+  </div>
+  <div class="media-progress" id="media-progress" hidden>
+    <div class="media-progress-track"><div class="media-progress-bar" id="media-progress-bar"></div></div>
+    <span id="media-progress-label"></span>
+    <button id="media-cancel" type="button">Cancel</button>
   </div>
 </div>
 
@@ -597,11 +819,11 @@ body.crop-mode .crop-actions { display:flex; }
       <button class="abtn abtn-copy"     id="btn-share">Share</button>
       <button class="abtn abtn-save"     id="btn-save">Save PNG</button>
       <button class="abtn abtn-original" id="btn-save-jpg">Save JPG</button>
-      <button class="abtn abtn-original" id="btn-copy-original">Copy Original</button>
-      <button class="abtn abtn-original" id="btn-save-original">Save Original</button>
+      <button class="abtn abtn-original image-only" id="btn-copy-original">Copy Original</button>
+      <button class="abtn abtn-original image-only" id="btn-save-original">Save Original</button>
     </div>
   </details>
-  <details class="toolbar-menu">
+  <details class="toolbar-menu image-only">
     <summary>Canvas</summary>
     <div class="menu-pop">
       <button class="abtn abtn-original" id="btn-rotate-left">Rotate Left</button>
@@ -638,6 +860,40 @@ body.crop-mode .crop-actions { display:flex; }
     <div class="choice-actions">
       <button id="project-name-create">Create</button>
       <button id="project-name-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<div class="media-viewer" id="media-viewer">
+  <div class="media-viewer-stage" id="media-viewer-stage"></div>
+  <div class="media-viewer-bar">
+    <span id="media-viewer-name"></span>
+    <button id="media-viewer-edit" type="button">✎ Edit</button>
+    <button id="media-viewer-reveal" type="button">Reveal in Finder</button>
+    <button id="media-viewer-close" type="button">Close</button>
+  </div>
+</div>
+<div class="choice-backdrop" id="clip-picker-backdrop">
+  <div class="choice-box clip-picker-box">
+    <h2>Add clips</h2>
+    <div class="clip-picker-tools">
+      <input class="choice-input clip-picker-search" id="clip-picker-search" type="search" placeholder="Search clips by name" autocomplete="off">
+      <div class="clip-picker-seg" id="clip-picker-kind">
+        <button type="button" data-kind="all" class="on">All</button>
+        <button type="button" data-kind="video">Videos</button>
+        <button type="button" data-kind="gif">GIFs</button>
+      </div>
+      <select id="clip-picker-project" title="Project"></select>
+      <select id="clip-picker-sort" title="Sort">
+        <option value="new">Newest</option><option value="old">Oldest</option><option value="name">Name</option>
+      </select>
+    </div>
+    <div class="clip-picker-grid" id="clip-picker-grid"></div>
+    <div class="clip-picker-foot">
+      <span class="clip-picker-hint" id="clip-picker-hint"></span>
+      <div class="choice-actions">
+        <button id="clip-picker-cancel" type="button">Cancel</button>
+        <button id="clip-picker-add" type="button" class="clip-picker-primary" disabled>Add clips</button>
+      </div>
     </div>
   </div>
 </div>
@@ -709,6 +965,9 @@ body.crop-mode .crop-actions { display:flex; }
   </div>
 </div>
 
+<script src="vendor/gifenc.js"></script>
+<script src="vendor/mp4-muxer.js"></script>
+<script src="media-editor.js"></script>
 <script>
 // ── State ──────────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('c');
@@ -757,6 +1016,11 @@ const RECENT_COLORS_KEY = 'jqg-recent-colors';
 const resizeHandle = document.getElementById('canvas-resize-handle');
 let undoStack = [];
 let redoStack = [];
+// Video editing session (see "Video editing in the main editor"). Declared up here because
+// render() and the Inspector check it, and both can run before that section is reached.
+let mediaEdit = null;
+let galleryItemsByPath = new Map();   // filled by loadGallery(); the context menu works on paths
+let linkedFolders = {};               // projectId → { path, name, exists } (see "Project folders")   // { item, source, frame, frameCtx, start, end, t, crop, cropping, playing, drawing, pendingT, exporting, snapshot }
 
 const HANDLE_R = 6; // handle circle radius in visible px
 
@@ -805,11 +1069,14 @@ function currentBaseDataURL() {
 }
 
 function snapshot() {
-  return { baseDataURL: currentBaseDataURL(), anns: cloneAnns(), canvasSize: { width: canvas.width, height: canvas.height }, selectedIdx };
+  const s = { baseDataURL: currentBaseDataURL(), anns: cloneAnns(), canvasSize: { width: canvas.width, height: canvas.height }, selectedIdx };
+  if (mediaEdit) s.videoCrop = mediaEdit.crop;   // annotation coordinates depend on the crop
+  return s;
 }
 
 function restoreSnapshot(s) {
   const finish=()=>{
+    if (mediaEdit && 'videoCrop' in s) setMediaCropView(s.videoCrop);
     anns = cloneAnns(s.anns || []);
     canvas.width = s.canvasSize?.width || canvas.width;
     canvas.height = s.canvasSize?.height || canvas.height;
@@ -981,6 +1248,7 @@ function positionCanvasResizeHandle() {
   const canvasRect = canvas.getBoundingClientRect();
   resizeHandle.style.left = (canvasRect.right - wrapRect.left - 9) + 'px';
   resizeHandle.style.top = (canvasRect.bottom - wrapRect.top - 9) + 'px';
+  positionMediaCropLayer();
 }
 
 function cachedImage(src) {
@@ -1006,7 +1274,7 @@ function imageReady(src) {
 }
 
 async function warmGalleryComposite(item) {
-  if (!item?.filePath) return null;
+  if (!item?.filePath || isMediaItem(item) || item.external) return null;
   const cached=galleryCompositeCache.get(item.filePath);
   if (cached) return cached.promise;
   const cachedEntry={ dataURL:null, promise:null };
@@ -1025,7 +1293,7 @@ async function warmGalleryComposite(item) {
     off.height=canvasSize?.height || bg.naturalHeight;
     const oc=off.getContext('2d');
     oc.drawImage(bg,0,0);
-    annotations.forEach(a=>drawAnn(oc,a,bg,off.width,off.height));
+    annotations.forEach(a=>drawAnn(oc,a,bg,off.width,off.height,false));
     cachedEntry.dataURL=off.toDataURL('image/png');
     return cachedEntry.dataURL;
   })();
@@ -1044,6 +1312,7 @@ function dataURLToFile(dataURL, filename) {
 }
 
 function startExternalGalleryDrag(item) {
+  if (isMediaItem(item)) { window.electronAPI?.startDrag?.(item.filePath); return; }
   if (currentPath === item.filePath) {
     window.electronAPI?.startDragComposite?.({filePath:item.filePath,compositeDataURL:compositeDataURL(),filename:item.filename});
     return;
@@ -1343,6 +1612,7 @@ function getHandles(a) {
 }
 
 function findHandleHit(a, x, y) {
+  if (!annShownNow(a)) return null;   // hidden (outside its video time): no handles to grab
   const r = handleRadius();
   for (const h of getHandles(a))
     if (Math.hypot(x-h.x, y-h.y) <= r + toCanvasSize(4)) return h;
@@ -1422,8 +1692,19 @@ function hitTest(a,x,y) {
 }
 
 function findHit(x,y) {
-  for (let i=anns.length-1;i>=0;i--) if (hitTest(anns[i],x,y)) return i;
+  for (let i=anns.length-1;i>=0;i--) {
+    if (!annShownNow(anns[i])) continue;
+    if (hitTest(anns[i],x,y)) return i;
+  }
   return -1;
+}
+
+// Video annotations may carry t0/t1 (seconds in the source); none means the whole video.
+function annVisibleAt(a,t) {
+  return !(a.t0!=null && t<a.t0) && !(a.t1!=null && t>a.t1);
+}
+function annShownNow(a) {
+  return !mediaEdit || annVisibleAt(a,mediaEdit.t);
 }
 
 function moveAnn(a,dx,dy) {
@@ -1443,7 +1724,7 @@ function updateInspector() {
   document.getElementById('inspector-empty').style.display = a ? 'none' : 'block';
   document.getElementById('inspector-controls').style.display = a ? 'block' : 'none';
   document.getElementById('inspector-type').textContent = a ? a.type : 'None';
-  if (!a) return;
+  if (!a) { syncAnnTimingUI(); return; }
   const strokeControl=document.getElementById('insp-stroke');
   const opacityControl=document.getElementById('insp-opacity');
   strokeControl.max = a.type === 'blur' ? 500 : 150;
@@ -1452,6 +1733,7 @@ function updateInspector() {
   strokeControl.value = Math.max(1, Math.min(+strokeControl.max, Math.round(toScreenSize(a.sw || a.fs || currentCanvasStroke()))));
   opacityControl.value = Math.round((a.opacity ?? 1) * 100);
   document.getElementById('insp-text-size').value = Math.round(toScreenSize(a.fs || currentCanvasTextSize()));
+  syncAnnTimingUI();
 }
 
 function mutateSelected(fn) {
@@ -1501,8 +1783,11 @@ function deleteSelected() {
 function render() {
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if (bgImage) ctx.drawImage(bgImage,0,0);
-  anns.forEach(a=>drawAnn(ctx,a));
-  if (selectedIdx>=0 && selectedIdx<anns.length)
+  // Outside its time range an annotation is fully hidden, even when selected (its bar in
+  // the video lane still shows it and can select it).
+  anns.forEach(a=>{ if (annShownNow(a)) drawAnn(ctx,a); });
+  if (mediaEdit) syncAnnTimingUI();
+  if (selectedIdx>=0 && selectedIdx<anns.length && annShownNow(anns[selectedIdx]))
     drawSelectionBounds(anns[selectedIdx]);
   if (cropMode) drawCropOverlay();
   positionCanvasResizeHandle();
@@ -1554,7 +1839,8 @@ function drawBlockArrow(c, x1, y1, x2, y2, sw) {
 }
 
 // drawAnn accepts a ctxArg so it can be called for offscreen compositing too
-function drawAnn(c, a, baseImage = bgImage, baseW = canvas.width, baseH = canvas.height) {
+// guides: on-screen editing aids (the dashed blur outline). Off for anything exported or copied.
+function drawAnn(c, a, baseImage = bgImage, baseW = canvas.width, baseH = canvas.height, guides = true) {
   c.save();
   const annOpacity = a.opacity ?? 1;
   c.globalAlpha = Math.min(1, annOpacity);
@@ -1621,8 +1907,11 @@ function drawAnn(c, a, baseImage = bgImage, baseW = canvas.width, baseH = canvas
         c.fillRect(bx,by,bw,bh);
         c.restore();
       }
-      c.strokeStyle='rgba(108,78,246,.5)'; c.lineWidth=1; c.setLineDash([4,4]);
-      c.strokeRect(bx,by,bw,bh); c.setLineDash([]); break;
+      if (guides) {
+        c.strokeStyle='rgba(108,78,246,.5)'; c.lineWidth=1; c.setLineDash([4,4]);
+        c.strokeRect(bx,by,bw,bh); c.setLineDash([]);
+      }
+      break;
     }
   }
   c.restore();
@@ -2040,12 +2329,14 @@ document.addEventListener('keyup',e=>{
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 function undo() {
+  if (mediaEdit?.cropping) { toast('Finish cropping first'); return; }
   if (!undoStack.length) return;
   redoStack.push(snapshot());
   restoreSnapshot(undoStack.pop());
 }
 
 function redo() {
+  if (mediaEdit?.cropping) { toast('Finish cropping first'); return; }
   if (!redoStack.length) return;
   undoStack.push(snapshot());
   restoreSnapshot(redoStack.pop());
@@ -2063,7 +2354,7 @@ function compositeDataURL() {
   off.width=canvas.width; off.height=canvas.height;
   const oc=off.getContext('2d');
   if (bgImage) oc.drawImage(bgImage,0,0);
-  anns.forEach(a=>drawAnn(oc,a,bgImage,off.width,off.height));
+  anns.forEach(a=>drawAnn(oc,a,bgImage,off.width,off.height,false));
   return off.toDataURL('image/png');
 }
 function flatJpegDataURL(quality=.9) {
@@ -2071,7 +2362,9 @@ function flatJpegDataURL(quality=.9) {
   off.width=canvas.width; off.height=canvas.height;
   const oc=off.getContext('2d');
   oc.fillStyle='#fff'; oc.fillRect(0,0,off.width,off.height);
-  oc.drawImage(canvas,0,0);
+  // Draw the document, not the on-screen canvas (which has selection handles and guides).
+  if (bgImage) oc.drawImage(bgImage,0,0);
+  anns.forEach(a=>drawAnn(oc,a,bgImage,off.width,off.height,false));
   return off.toDataURL('image/jpeg',quality);
 }
 function originalImageDataURL() {
@@ -2561,13 +2854,16 @@ function showPrefs() {
 }
 
 function saveAnns() {
-  if (window.electronAPI&&currentPath)
+  if (mediaEdit) { scheduleVideoSessionSave(); return; }
+  if (window.electronAPI&&currentPath) {
     window.electronAPI.annotationSave({
       filePath: currentPath,
       anns,
       canvasSize: { width: canvas.width, height: canvas.height },
       flatDataURL: compositeDataURL(),
     });
+    scheduleFolderRefresh(currentPath);
+  }
 }
 
 async function saveAnnsNow() {
@@ -2801,6 +3097,7 @@ function assignToProject(filePath, projectId) {
   else assignments[filePath]=projectId;
   setProjectAssignments(assignments);
   toast(projectId==='all'?'Removed from project':'Moved to project');
+  copyToProjectFolder(projectId,[filePath]);
   loadGallery();
 }
 
@@ -2814,6 +3111,7 @@ function assignManyToProject(filePaths, projectId) {
   toast(projectId==='all'
     ? `Removed ${filePaths.length} from project`
     : `Moved ${filePaths.length} to project`);
+  copyToProjectFolder(projectId,filePaths);
   loadGallery();
 }
 
@@ -2841,6 +3139,7 @@ async function deleteProject(project) {
   }
 
   setProjects(getProjects().filter(p=>p.id!==project.id));
+  if (linkedFolders[project.id]) { await window.electronAPI.projectFolderUnlink(project.id); await refreshLinkedFolders(); }
   if (activeProject()===project.id) setActiveProject('all');
   else { renderProjects(); loadGallery(); }
   render();
@@ -2868,6 +3167,92 @@ function projectDeleteChoice(project, count) {
   });
 }
 
+// ── Project folders: a project can be linked to a real folder ─────────────────
+// Captures added to the project are copied there (screenshots as their annotated image, kept
+// up to date as you edit); files already in the folder show up in the project with a 📁 badge.
+// The app never renames, moves or deletes files in a linked folder.
+async function refreshLinkedFolders() {
+  linkedFolders = (await window.electronAPI?.projectFolders?.()) || {};
+  renderProjects();
+}
+
+function showProjectMenu(project, x, y) {
+  const menu=document.getElementById('gallery-context');
+  hideProjectSubmenu();
+  menu.innerHTML='';
+  const add=(label,fn,cls='')=>{
+    const b=document.createElement('button');
+    b.type='button'; b.textContent=label;
+    if (cls) b.className=cls;
+    b.addEventListener('click',()=>{ hideGalleryContext(); fn(); });
+    menu.appendChild(b);
+  };
+  const link=linkedFolders[project.id];
+  if (link) {
+    if (link.exists) add('Show Folder in Finder',()=>window.electronAPI.projectFolderReveal(project.id));
+    add('Change Linked Folder…',()=>linkProjectFolder(project));
+    add('Unlink Folder',()=>unlinkProjectFolder(project));
+  } else {
+    add('Link to Folder…',()=>linkProjectFolder(project));
+  }
+  add('Delete Project',()=>deleteProject(project),'danger');
+  menu.style.left=Math.min(x,window.innerWidth-210)+'px';
+  menu.style.top=Math.min(y,window.innerHeight-160)+'px';
+  menu.style.display='block';
+}
+
+async function linkProjectFolder(project) {
+  const link=await window.electronAPI.projectFolderLink(project.id);
+  if (!link) return;
+  await refreshLinkedFolders();
+  // Everything already in the project goes into the folder now.
+  const assigned=Object.entries(getProjectAssignments()).filter(([,id])=>id===project.id).map(([fp])=>fp);
+  const copied=assigned.length ? await window.electronAPI.projectFolderExport({ projectId: project.id, filePaths: assigned }) : 0;
+  toast(`Linked "${project.name}" to ${link.name}${copied ? ` · copied ${copied} capture${copied===1?'':'s'}` : ''}`);
+  setActiveProject(project.id);
+}
+
+async function unlinkProjectFolder(project) {
+  await window.electronAPI.projectFolderUnlink(project.id);
+  await refreshLinkedFolders();
+  toast(`Unlinked "${project.name}" (the folder and its files are unchanged)`);
+  loadGallery();
+}
+
+async function copyToProjectFolder(projectId, filePaths) {
+  const link=linkedFolders[projectId];
+  const paths=filePaths.filter(fp=>!galleryItemsByPath.get(fp)?.external);
+  if (!link || !paths.length || !window.electronAPI?.projectFolderExport) return;
+  const copied=await window.electronAPI.projectFolderExport({ projectId, filePaths: paths });
+  if (copied) toast(`Copied ${copied} to ${link.name}`);
+}
+
+// Annotating a screenshot in a linked project keeps its folder copy current.
+const folderRefreshTimers=new Map();
+function scheduleFolderRefresh(filePath) {
+  const projectId=getProjectAssignments()[filePath];
+  if (!projectId || !linkedFolders[projectId]) return;
+  clearTimeout(folderRefreshTimers.get(filePath));
+  folderRefreshTimers.set(filePath, setTimeout(()=>{
+    folderRefreshTimers.delete(filePath);
+    window.electronAPI.projectFolderExport({ projectId, filePaths: [filePath] });
+  }, 900));
+}
+
+// A folder image opens as a capture copy (the original is untouched) that belongs to the project.
+async function importFolderImage(item) {
+  const capture=await window.electronAPI.projectFolderImport({ projectId: item.projectId, filePath: item.filePath });
+  if (!capture) { toast('Could not open that file'); return; }
+  const assignments=getProjectAssignments();
+  assignments[capture.filePath]=item.projectId;
+  setProjectAssignments(assignments);
+  await loadGallery();
+  openGalleryItem(capture.filePath);
+}
+
+window.electronAPI?.onProjectFolderChanged?.(projectId=>{ if (activeProject()===projectId) loadGallery(); });
+refreshLinkedFolders();
+
 function renderProjects() {
   const wrap=document.getElementById('gallery-projects');
   const projects=[{id:'all',name:'All Captures'}, ...getProjects()];
@@ -2877,9 +3262,27 @@ function renderProjects() {
     const row=document.createElement('div');
     row.className='project-row'+(project.id===current?' active':'');
     row.dataset.projectId=project.id;
-    row.innerHTML=`<span>📁</span><span class="project-name"></span>`;
+    const link=linkedFolders[project.id];
+    row.innerHTML=`<span>${link ? '🔗' : '📁'}</span><span class="project-name"></span>`;
     row.querySelector('.project-name').textContent=project.name;
+    if (link) {
+      // The sidebar is narrow: the 🔗 icon marks the link and the tooltip names the folder.
+      row.title=link.exists ? `Linked to ${link.path}` : `Linked folder not found: ${link.path}`;
+      if (!link.exists) {
+        const f=document.createElement('span');
+        f.className='project-folder missing';
+        f.textContent='⚠';
+        row.appendChild(f);
+      }
+    }
     if (project.id!=='all') {
+      const more=document.createElement('button');
+      more.className='project-menu-btn';
+      more.textContent='⋯';
+      more.title='Link a folder, show it in Finder…';
+      more.addEventListener('click',e=>{ e.stopPropagation(); const r=more.getBoundingClientRect(); showProjectMenu(project,r.left,r.bottom+4); });
+      row.appendChild(more);
+      row.addEventListener('contextmenu',e=>{ e.preventDefault(); e.stopPropagation(); showProjectMenu(project,e.clientX,e.clientY); });
       const del=document.createElement('button');
       del.className='project-delete';
       del.textContent='×';
@@ -3008,6 +3411,1123 @@ document.addEventListener('click',e=>{
 });
 
 // ── Gallery ───────────────────────────────────────────────────────────────────
+// GIFs and recordings live in the gallery too, but play in a viewer instead of the canvas.
+const isMediaItem = item => item?.kind === 'gif' || item?.kind === 'video';
+const mediaViewer = document.getElementById('media-viewer');
+const mediaStage = document.getElementById('media-viewer-stage');
+let mediaViewerItem = null;
+
+function openGalleryEntry(item) {
+  if (mediaEdit) { toast('Close the video editor first (✕ Close video)'); return; }
+  if (item.external && !isMediaItem(item)) { importFolderImage(item); return; }
+  if (isMediaItem(item)) openMediaViewer(item);
+  else openGalleryItem(item.filePath);
+}
+
+function openMediaViewer(item) {
+  mediaViewerItem = item;
+  document.getElementById('media-viewer-edit').hidden = !window.MediaEditor;
+  mediaStage.innerHTML = '';
+  const el = document.createElement(item.kind === 'video' ? 'video' : 'img');
+  if (item.kind === 'video') Object.assign(el, { controls: true, autoplay: true, loop: true });
+  el.src = item.fileURL;
+  el.onerror = () => toast('Could not play this file');
+  mediaStage.appendChild(el);
+  document.getElementById('media-viewer-name').textContent = item.filename;
+  mediaViewer.classList.add('on');
+  if (item.kind === 'video') el.focus();
+}
+
+function closeMediaViewer() {
+  if (!mediaViewer.classList.contains('on')) return;
+  mediaViewer.classList.remove('on');
+  mediaStage.innerHTML = '';   // stops playback
+  mediaViewerItem = null;
+}
+
+document.getElementById('media-viewer-close').addEventListener('click', closeMediaViewer);
+document.getElementById('media-viewer-reveal').addEventListener('click', () => {
+  if (mediaViewerItem) window.electronAPI?.galleryReveal?.(mediaViewerItem.filePath);
+});
+document.getElementById('media-viewer-edit').addEventListener('click', () => {
+  const item = mediaViewerItem;
+  closeMediaViewer();
+  enterMediaEdit(item);
+});
+mediaViewer.addEventListener('click', e => { if (e.target === mediaViewer) closeMediaViewer(); });
+// While the viewer is up, editor shortcuts must not act on the canvas behind it. Capture phase
+// runs before those listeners; the video's own keys (space, arrows) still work as default actions.
+document.addEventListener('keydown', e => {
+  if (!mediaViewer.classList.contains('on')) return;
+  if (e.key === 'Escape') closeMediaViewer();
+  e.stopImmediatePropagation();
+}, true);
+
+// ── Video editing in the main editor ─────────────────────────────────────────
+// Edit opens the video/GIF on the normal canvas: a frame canvas stands in for the background
+// image, so every annotation tool (and blur, which samples the background) works on it as-is,
+// and the dock under the canvas handles time, crop and export. The screenshot that was open
+// is set aside and restored when the video editor closes.
+//
+// A session is a sequence of clips. The canvas is the first clip's size (later clips are
+// letterboxed onto it), and the timeline lays the clips end to end at full length, each with
+// its own trim. Annotation times are on that combined timeline. With one clip all of this is
+// simply the clip's own size and time.
+//
+// Crop is real: once applied, the canvas shows only the cropped area and annotations are in
+// its coordinates. While cropping, the canvas shows the whole frame again (annotations shifted
+// to match) so the box can be adjusted. The session auto-saves next to the video and is
+// restored the next time that video is edited, like screenshot annotations.
+const MEDIA_MIN_TRIM = 0.1;   // seconds
+const MEDIA_MIN_CROP = 16;    // canvas px
+const videoDock = document.getElementById('video-dock');
+const mediaCropLayer = document.getElementById('media-crop-layer');
+let mediaClipSeq = 0;
+
+const fmtMediaTime = s => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+const mediaFullRect = me => ({ x: 0, y: 0, w: me.W, h: me.H });
+// The canvas's own coordinate space: the cropped area once a crop is applied, else the frame.
+const mediaViewRect = me => (me.crop && !me.cropping ? { x: 0, y: 0, w: me.crop.w, h: me.crop.h } : mediaFullRect(me));
+const sameMediaCrop = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
+
+async function openMediaClip(item) {
+  const bytes = item.kind === 'gif' ? await window.electronAPI.mediaRead(item.filePath) : null;
+  if (item.kind === 'gif' && !bytes) throw new Error('Could not read GIF');
+  const source = await window.MediaEditor.openSource({ kind: item.kind, fileURL: item.fileURL, bytes: bytes && new Uint8Array(bytes) });
+  const clip = { id: ++mediaClipSeq, item, source, start: 0, end: source.duration, offset: 0, audio: null };
+  if (item.kind === 'video') loadMediaClipAudio(clip);
+  return clip;
+}
+
+// A recording's sound (system audio / mic). Decoded in the background so opening isn't held
+// up; until it's ready the clip plays and exports silent. GIFs never have audio.
+async function loadMediaClipAudio(clip) {
+  try {
+    const bytes = await window.electronAPI.mediaRead(clip.item.filePath);
+    clip.audio = bytes && window.MediaEditor.decodeAudio ? await window.MediaEditor.decodeAudio(new Uint8Array(bytes)) : null;
+  } catch (err) {
+    console.warn('audio decode failed', err);
+    clip.audio = null;
+  }
+  if (mediaEdit?.clips.includes(clip)) syncMediaMute();
+}
+
+function layoutMediaClips(me) {
+  let offset = 0;
+  me.clips.forEach(c => { c.offset = offset; offset += c.source.duration; });
+  me.duration = offset;
+}
+
+const mediaClipAt = (me, T) => me.clips.find(c => T < c.offset + c.source.duration) || me.clips[me.clips.length - 1];
+
+// Where a clip's frame sits on the canvas: fitted and centred (letterboxed).
+function mediaClipPlacement(me, c) {
+  const s = Math.min(me.W / c.source.width, me.H / c.source.height);
+  const w = Math.round(c.source.width * s), h = Math.round(c.source.height * s);
+  return { x: Math.round((me.W - w) / 2), y: Math.round((me.H - h) / 2), w, h };
+}
+
+// Draws clip c at its local time t onto ctx, a canvas the size of the whole composition.
+// drawFrame fills whatever canvas it's given, so letterboxed clips go through a scratch
+// canvas the size of their placement.
+async function drawMediaComposition(me, ctx, c, t, scratch) {
+  const p = mediaClipPlacement(me, c);
+  if (p.w === me.W && p.h === me.H) return window.MediaEditor.drawFrame(c.source, ctx, t, null);
+  let tmp = scratch.get(c.id);
+  if (!tmp || tmp.canvas.width !== p.w || tmp.canvas.height !== p.h) {
+    const cv = document.createElement('canvas');
+    cv.width = p.w; cv.height = p.h;
+    tmp = { canvas: cv, ctx: cv.getContext('2d') };
+    scratch.set(c.id, tmp);
+  }
+  await window.MediaEditor.drawFrame(c.source, tmp.ctx, t, null);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, me.W, me.H);
+  ctx.drawImage(tmp.canvas, p.x, p.y);
+}
+
+async function enterMediaEdit(items, { restore = true } = {}) {
+  items = (Array.isArray(items) ? items : [items]).filter(isMediaItem);
+  if (!items.length || !window.MediaEditor || mediaEdit) return;
+  const origin = items[0].filePath;   // the session is saved under this file
+  const clips = [];
+  try {
+    // Editing one video picks up where its last session left off (combining starts fresh).
+    // A session that can't be loaded just means starting fresh.
+    let session = restore && items.length === 1 ? await window.electronAPI.videoSessionLoad?.(origin)?.catch(() => null) : null;
+    if (!session?.clips?.some(c => c.item.filePath === origin)) session = null;
+    if (session) items = session.clips.map(c => c.item);
+    for (const item of items) clips.push(await openMediaClip(item));
+    session?.clips.forEach((sc, i) => {
+      const c = clips[i], d = c.source.duration;
+      c.start = Math.max(0, Math.min(+sc.start || 0, d - MEDIA_MIN_TRIM));
+      c.end = sc.end == null ? d : Math.max(c.start + MEDIA_MIN_TRIM, Math.min(+sc.end, d));
+    });
+    const W = clips[0].source.width, H = clips[0].source.height;
+    const frame = document.createElement('canvas');
+    frame.width = W;
+    frame.height = H;
+    const view = document.createElement('canvas');
+    mediaEdit = {
+      clips, W, H, origin, duration: 0, frame, frameCtx: frame.getContext('2d'), previewScratch: new Map(),
+      view, viewCtx: view.getContext('2d'),
+      t: 0, crop: null, cropping: false, cropBefore: null, cropUndoDepth: 0,
+      muted: false, audioCtx: null, audioNodes: [],
+      playing: false, drawing: false, pendingT: null, exporting: null, segKey: '',
+      snapshot: { bgImage, originalDataURL, anns, currentPath, w: canvas.width, h: canvas.height, undoStack, redoStack, selectedIdx },
+    };
+    layoutMediaClips(mediaEdit);
+    // originalDataURL is a marker, not image data: undo/redo reload the base image whenever it
+    // differs from their snapshot, which would freeze the canvas on one frame.
+    bgImage = frame;
+    originalDataURL = `video-frame:${clips[0].item.filePath}`;
+    anns = []; currentPath = null;   // no currentPath: nothing is auto-saved as a screenshot
+    undoStack = []; redoStack = []; selectedIdx = -1;
+    if (session) {
+      // A crop saved for a different canvas size (e.g. its first clip went missing) no longer fits.
+      const c = session.crop;
+      mediaEdit.crop = c && session.W === W && session.H === H && c.x + c.w <= W && c.y + c.h <= H ? c : null;
+      anns = cloneAnns(session.anns || []);
+    }
+    document.body.classList.add('video-mode');
+    videoDock.hidden = false;
+    document.getElementById('media-format').value = clips.some(c => c.item.kind === 'video') ? 'mp4' : 'gif';
+    setMediaBusy(null);
+    setMediaCropping(false);
+    syncMediaFormat();
+    renderMediaClips();
+    syncMediaMute();
+    applyMediaView();
+    updateInspector();
+    await drawMediaPreview(0);
+    if (session?.missing) toast(`Restored your edits (${session.missing} clip${session.missing > 1 ? 's are' : ' is'} missing)`);
+    else if (session) toast('Restored your last edits');
+  } catch (err) {
+    console.error('media edit failed', err);
+    clips.forEach(c => { try { c.source.close(); } catch {} });
+    toast('Could not open this file for editing');
+  }
+}
+
+function exitMediaEdit({ reopenViewer = false } = {}) {
+  const me = mediaEdit;
+  if (!me) return;
+  me.exporting?.abort();
+  stopMediaPlayback();
+  me.audioCtx?.close();
+  if (me.cropping) setMediaCropping(false);
+  saveVideoSessionNow();
+  mediaEdit = null;
+  me.clips.forEach(c => { try { c.source.close(); } catch {} });
+  const s = me.snapshot;
+  bgImage = s.bgImage; originalDataURL = s.originalDataURL; anns = s.anns; currentPath = s.currentPath;
+  canvas.width = s.w; canvas.height = s.h;
+  undoStack = s.undoStack; redoStack = s.redoStack; selectedIdx = s.selectedIdx;
+  document.body.classList.remove('video-mode');
+  videoDock.hidden = true;
+  mediaCropLayer.hidden = true;
+  fitZoom(); render(); updateCanvasView(); updateInspector();
+  if (reopenViewer) openMediaViewer(me.clips[0].item);
+}
+
+// Draws are async (video seeks); coalesce requests so scrubbing never queues a backlog.
+async function drawMediaPreview(t) {
+  const me = mediaEdit;
+  if (!me) return;
+  me.t = Math.max(0, Math.min(me.duration, t));
+  renderMediaTimeline();
+  if (me.drawing) { me.pendingT = me.t; return; }
+  me.drawing = true;
+  try {
+    const c = mediaClipAt(me, me.t);
+    await drawMediaComposition(me, me.frameCtx, c, Math.min(me.t - c.offset, c.source.duration), me.previewScratch);
+    if (mediaEdit === me) { paintMediaView(); render(); }
+  } catch (err) { console.error('preview draw failed', err); }
+  me.drawing = false;
+  if (me.pendingT !== null && mediaEdit === me) {
+    const next = me.pendingT;
+    me.pendingT = null;
+    drawMediaPreview(next);
+  }
+}
+
+// ── Timeline: one segment per clip, each with its trimmed range and handles ──
+const mediaOutputDuration = me => me.clips.reduce((sum, c) => sum + (c.end - c.start), 0);
+
+function renderMediaTimeline() {
+  const me = mediaEdit;
+  if (!me) return;
+  const D = me.duration;
+  const segs = document.getElementById('media-segments');
+  const key = me.clips.map(c => c.id).join(',');
+  if (key !== me.segKey) {
+    me.segKey = key;
+    segs.innerHTML = '';
+    me.clips.forEach((c, k) => {
+      const seg = document.createElement('div');
+      seg.className = 'media-seg';
+      seg.innerHTML = `<div class="media-timeline-range"></div>
+        <div class="media-timeline-handle start" title="Trim start"></div>
+        <div class="media-timeline-handle end" title="Trim end"></div>
+        ${me.clips.length > 1 ? `<span class="media-seg-label">${k + 1}</span>` : ''}`;
+      const [, hs, he] = seg.children;
+      hs.addEventListener('pointerdown', e => dragMediaTimeline(e, T => {
+        c.start = Math.max(0, Math.min(T - c.offset, c.end - MEDIA_MIN_TRIM));
+        scheduleVideoSessionSave();
+        drawMediaPreview(c.offset + c.start);
+      }));
+      he.addEventListener('pointerdown', e => dragMediaTimeline(e, T => {
+        c.end = Math.min(c.source.duration, Math.max(T - c.offset, c.start + MEDIA_MIN_TRIM));
+        scheduleVideoSessionSave();
+        drawMediaPreview(c.offset + c.end);
+      }));
+      c.seg = seg;
+      segs.appendChild(seg);
+    });
+  }
+  me.clips.forEach(c => {
+    const d = c.source.duration;
+    c.seg.style.left = `${c.offset / D * 100}%`;
+    c.seg.style.width = `${d / D * 100}%`;
+    const [range, hs, he] = c.seg.children;
+    range.style.left = `${c.start / d * 100}%`;
+    range.style.width = `${(c.end - c.start) / d * 100}%`;
+    hs.style.left = `${c.start / d * 100}%`;
+    he.style.left = `${c.end / d * 100}%`;
+  });
+  document.getElementById('media-playhead').style.left = `${me.t / D * 100}%`;
+  const clipNote = me.clips.length > 1 ? `clip ${me.clips.indexOf(mediaClipAt(me, me.t)) + 1}/${me.clips.length} · ` : '';
+  document.getElementById('media-time').textContent =
+    `${fmtMediaTime(me.t)}  ·  ${clipNote}exports ${mediaOutputDuration(me).toFixed(1)}s`;
+  syncAnnTimingUI();
+}
+
+function mediaTimeFromEvent(e) {
+  const r = document.getElementById('media-timeline').getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * mediaEdit.duration;
+}
+
+// Tracks a drag on the window rather than via pointer capture: the trim handles move
+// out from under the pointer as they're dragged.
+function trackMediaDrag(onMove, onUp) {
+  const up = ev => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', up);
+    onUp?.(ev);
+  };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', up);
+}
+
+// One drag helper for the playhead and all trim handles.
+function dragMediaTimeline(e, onMove) {
+  if (!mediaEdit || e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  stopMediaPlayback();
+  onMove(mediaTimeFromEvent(e));
+  trackMediaDrag(ev => mediaEdit && onMove(mediaTimeFromEvent(ev)));
+}
+
+document.getElementById('media-timeline').addEventListener('pointerdown', e =>
+  dragMediaTimeline(e, t => drawMediaPreview(t)));
+
+// Playback runs through each clip's trimmed range in order, skipping trimmed-out parts, and
+// loops. Frames are drawn by seeking, so it may run below the source frame rate; it's a
+// preview, export is exact.
+function nextPlayableTime(me, T) {
+  for (const c of me.clips) {
+    const from = c.offset + c.start, to = c.offset + c.end;
+    if (T < from) return from;
+    if (T <= to) return T;
+  }
+  return me.clips[0].offset + me.clips[0].start;
+}
+
+function toggleMediaPlayback() {
+  const me = mediaEdit;
+  if (!me) return;
+  if (me.playing) { stopMediaPlayback(); return; }
+  me.playing = true;
+  document.getElementById('media-play').textContent = '❚❚ Pause';
+  me.t = nextPlayableTime(me, me.t);
+  startMediaAudio(me);
+  let last = performance.now();
+  const tick = now => {
+    if (mediaEdit !== me || !me.playing) return;
+    const t = nextPlayableTime(me, me.t + (now - last) / 1000);
+    last = now;
+    if (t < me.t) { stopMediaAudio(me); me.t = t; startMediaAudio(me); }   // looped back to the start
+    drawMediaPreview(t);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function stopMediaPlayback() {
+  if (!mediaEdit?.playing) return;
+  mediaEdit.playing = false;
+  stopMediaAudio(mediaEdit);
+  document.getElementById('media-play').textContent = '▶ Play';
+}
+
+// Sound for the preview: each clip's trimmed audio is scheduled back to back from the playhead,
+// on the same timeline the frames follow (trimmed-out parts are skipped in both).
+function startMediaAudio(me) {
+  if (me.muted || !me.clips.some(c => c.audio)) return;
+  me.audioCtx ||= new AudioContext();
+  let when = me.audioCtx.currentTime + 0.03;
+  for (const c of me.clips) {
+    const from = c.offset + c.start, to = c.offset + c.end;
+    if (me.t >= to) continue;
+    const at = Math.max(me.t, from), len = to - at;
+    if (c.audio && at - c.offset < c.audio.duration) {
+      const node = me.audioCtx.createBufferSource();
+      node.buffer = c.audio;
+      node.connect(me.audioCtx.destination);
+      node.start(when, at - c.offset, len);
+      me.audioNodes.push(node);
+    }
+    when += len;
+  }
+}
+
+function stopMediaAudio(me) {
+  me.audioNodes.forEach(n => { try { n.stop(); } catch {} });
+  me.audioNodes = [];
+}
+
+function syncMediaMute() {
+  const me = mediaEdit, b = document.getElementById('media-mute');
+  b.hidden = !me?.clips.some(c => c.audio);
+  if (!me) return;
+  b.textContent = me.muted ? '🔇' : '🔊';
+  b.title = me.muted ? 'Unmute preview' : 'Mute preview (exports keep the sound)';
+}
+
+document.getElementById('media-mute').addEventListener('click', () => {
+  const me = mediaEdit;
+  if (!me) return;
+  me.muted = !me.muted;
+  if (me.playing) { stopMediaAudio(me); startMediaAudio(me); }
+  syncMediaMute();
+});
+
+document.getElementById('media-play').addEventListener('click', toggleMediaPlayback);
+
+// ── Clips: chips to reorder/remove, and adding clips from the gallery ──
+function renderMediaClips() {
+  const me = mediaEdit;
+  const row = document.getElementById('media-clips');
+  row.innerHTML = '';
+  if (!me) return;
+  me.clips.forEach((c, k) => {
+    const chip = document.createElement('span');
+    chip.className = 'media-clip-chip';
+    const name = document.createElement('span');
+    name.className = 'media-clip-name';
+    name.textContent = `${me.clips.length > 1 ? `${k + 1} · ` : ''}${c.item.filename}`;
+    name.title = c.item.filename;
+    chip.appendChild(name);
+    const tools = [['◀', 'Move earlier', k > 0, () => moveMediaClip(k, -1)],
+      ['▶', 'Move later', k < me.clips.length - 1, () => moveMediaClip(k, 1)],
+      ['✕', 'Remove clip', me.clips.length > 1, () => removeMediaClip(k)]];
+    for (const [label, title, show, fn] of tools) {
+      if (!show) continue;
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = label; b.title = title;
+      b.addEventListener('click', fn);
+      chip.appendChild(b);
+    }
+    row.appendChild(chip);
+  });
+}
+
+function afterMediaClipsChange(T) {
+  const me = mediaEdit;
+  layoutMediaClips(me);
+  renderMediaClips();
+  syncMediaMute();
+  scheduleVideoSessionSave();
+  drawMediaPreview(Math.min(T, me.duration));
+}
+
+function moveMediaClip(k, dir) {
+  const me = mediaEdit;
+  if (!me || me.exporting) return;
+  stopMediaPlayback();
+  const [c] = me.clips.splice(k, 1);
+  me.clips.splice(k + dir, 0, c);
+  layoutMediaClips(me);
+  afterMediaClipsChange(c.offset + c.start);   // show the moved clip where it landed
+}
+
+function removeMediaClip(k) {
+  const me = mediaEdit;
+  if (!me || me.exporting || me.clips.length < 2) return;
+  stopMediaPlayback();
+  const [c] = me.clips.splice(k, 1);
+  try { c.source.close(); } catch {}
+  afterMediaClipsChange(me.t);
+}
+
+async function addMediaClips(items) {
+  const me = mediaEdit;
+  if (!me || me.exporting) return;
+  stopMediaPlayback();
+  try {
+    for (const item of items) {
+      const c = await openMediaClip(item);
+      if (mediaEdit !== me) { c.source.close(); return; }
+      me.clips.push(c);
+    }
+    layoutMediaClips(me);
+    const last = me.clips[me.clips.length - 1];
+    afterMediaClipsChange(last.offset + last.start);
+  } catch (err) {
+    console.error('add clip failed', err);
+    toast('Could not add that clip');
+  }
+}
+
+// ── Clip finder: every GIF/recording, searchable, filterable, with hover previews ──
+// Clicking cards selects them in order (numbered); "Add" appends them in that order.
+// Thumbnails and video lengths load as cards scroll into view and are kept for next time.
+const clipPicker = document.getElementById('clip-picker-backdrop');
+const clipPickerSearch = document.getElementById('clip-picker-search');
+const clipPickerGrid = document.getElementById('clip-picker-grid');
+const clipPickerState = { items: [], selected: [], kind: 'all' };
+const clipDetailCache = new Map();   // `${filePath}:${time}` → { thumb, duration }
+let clipCardObserver = null;
+let clipDurationQueue = Promise.resolve();
+
+const fmtClipSize = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+const fmtClipDate = t => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const clipKey = item => `${item.filePath}:${item.time}`;
+
+async function openClipPicker() {
+  if (!mediaEdit || mediaEdit.exporting) return;
+  clipPickerState.items = await window.electronAPI.mediaList();
+  clipPickerState.selected = [];
+  const projectSel = document.getElementById('clip-picker-project');
+  projectSel.innerHTML = '';
+  projectSel.append(new Option('All projects', 'all'));
+  getProjects().forEach(p => projectSel.append(new Option(p.name, p.id)));
+  projectSel.hidden = !getProjects().length;
+  clipPickerSearch.value = '';
+  renderClipPicker();
+  clipPicker.classList.add('on');
+  setTimeout(() => clipPickerSearch.focus(), 0);
+}
+
+function closeClipPicker() {
+  clipPicker.classList.remove('on');
+  clipCardObserver?.disconnect();
+  clipPickerGrid.innerHTML = '';   // also stops any hover preview
+}
+
+function filteredClipItems() {
+  const q = clipPickerSearch.value.trim().toLowerCase();
+  const { kind } = clipPickerState;
+  const project = document.getElementById('clip-picker-project').value;
+  const sort = document.getElementById('clip-picker-sort').value;
+  const assignments = getProjectAssignments();
+  const list = clipPickerState.items.filter(item =>
+    (kind === 'all' || item.kind === kind) &&
+    (!q || item.filename.toLowerCase().includes(q)) &&
+    (project === 'all' || assignments[item.filePath] === project || item.projectId === project));
+  if (sort === 'old') return list.reverse();
+  if (sort === 'name') return list.sort((a, b) => a.filename.localeCompare(b.filename, undefined, { numeric: true }));
+  return list;
+}
+
+function renderClipPicker() {
+  clipCardObserver?.disconnect();
+  clipPickerGrid.innerHTML = '';
+  const list = filteredClipItems();
+  if (!list.length) {
+    const p = document.createElement('p');
+    p.className = 'clip-picker-empty';
+    p.textContent = clipPickerState.items.length ? 'No clips match. Try a different search or filter.'
+      : 'No GIFs or recordings yet. Use Record or GIF in the capture bar to make one.';
+    clipPickerGrid.appendChild(p);
+  }
+  clipCardObserver = new IntersectionObserver(entries => entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    clipCardObserver.unobserve(e.target);
+    loadClipCardDetails(e.target);
+  }), { root: clipPickerGrid, rootMargin: '200px' });
+  for (const item of list) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'clip-picker-item';
+    card.title = `${item.filename}\nClick to select · double-click to add just this clip`;
+    card.clipItem = item;
+    card.innerHTML = `<div class="clip-picker-thumb">▶<span class="media-badge"></span></div>
+      <span class="clip-picker-name"></span><span class="clip-picker-meta"></span>`;
+    card.querySelector('.media-badge').textContent = item.kind === 'gif' ? 'GIF' : '▶ VIDEO';
+    card.querySelector('.clip-picker-name').textContent = item.filename;
+    renderClipCardMeta(card);
+    card.addEventListener('click', () => toggleClipPick(item));
+    card.addEventListener('dblclick', () => { closeClipPicker(); addMediaClips([item]); });
+    card.addEventListener('mouseenter', () => startClipPreview(card));
+    card.addEventListener('mouseleave', () => stopClipPreview(card));
+    clipPickerGrid.appendChild(card);
+    clipCardObserver.observe(card);
+  }
+  syncClipPicks();
+}
+
+function renderClipCardMeta(card) {
+  const item = card.clipItem, d = clipDetailCache.get(clipKey(item));
+  const parts = [fmtClipDate(item.time)];
+  if (d?.duration > 0 && Number.isFinite(d.duration)) parts.push(fmtMediaTime(d.duration).replace(/\.\d$/, '') + (d.duration < 60 ? ` (${d.duration.toFixed(1)}s)` : ''));
+  parts.push(fmtClipSize(item.size));
+  card.querySelector('.clip-picker-meta').textContent = parts.join(' · ');
+}
+
+async function loadClipCardDetails(card) {
+  const item = card.clipItem, key = clipKey(item);
+  let d = clipDetailCache.get(key);
+  if (!d) { d = {}; clipDetailCache.set(key, d); }
+  if (d.thumb === undefined) d.thumb = await window.electronAPI.mediaThumb(item.filePath).catch(() => null);
+  if (d.thumb && card.isConnected) {
+    const img = document.createElement('img');
+    img.src = d.thumb; img.alt = '';
+    card.querySelector('.clip-picker-thumb').prepend(img);
+  }
+  if (item.kind === 'video' && d.duration === undefined) {
+    // One metadata load at a time: dozens of <video> elements at once would thrash.
+    clipDurationQueue = clipDurationQueue.then(() => readVideoDuration(item.fileURL)).then(dur => {
+      d.duration = dur;
+      if (card.isConnected) renderClipCardMeta(card);
+    });
+  }
+}
+
+function readVideoDuration(fileURL) {
+  return new Promise(resolve => {
+    const v = document.createElement('video');
+    v.preload = 'metadata'; v.muted = true;
+    const done = value => { v.removeAttribute('src'); v.load(); resolve(value); };
+    v.onloadedmetadata = () => done(v.duration);
+    v.onerror = () => done(NaN);
+    setTimeout(() => done(NaN), 4000);
+    v.src = fileURL;
+  });
+}
+
+// Hover plays the clip in place (muted), so similar-looking clips are easy to tell apart.
+function startClipPreview(card) {
+  const item = card.clipItem, box = card.querySelector('.clip-picker-thumb');
+  if (box.querySelector('.clip-picker-preview')) return;
+  const el = document.createElement(item.kind === 'video' ? 'video' : 'img');
+  el.className = 'clip-picker-preview';
+  if (item.kind === 'video') Object.assign(el, { muted: true, autoplay: true, loop: true, playsInline: true });
+  el.src = item.fileURL;
+  box.appendChild(el);
+}
+
+function stopClipPreview(card) {
+  card.querySelector('.clip-picker-preview')?.remove();
+}
+
+function toggleClipPick(item) {
+  const sel = clipPickerState.selected, i = sel.indexOf(item.filePath);
+  if (i >= 0) sel.splice(i, 1); else sel.push(item.filePath);
+  syncClipPicks();
+}
+
+function syncClipPicks() {
+  const sel = clipPickerState.selected;
+  clipPickerGrid.querySelectorAll('.clip-picker-item').forEach(card => {
+    const n = sel.indexOf(card.clipItem.filePath);
+    card.classList.toggle('selected', n >= 0);
+    let badge = card.querySelector('.clip-picker-num');
+    if (n < 0) { badge?.remove(); return; }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'clip-picker-num';
+      card.querySelector('.clip-picker-thumb').appendChild(badge);
+    }
+    badge.textContent = n + 1;
+  });
+  const add = document.getElementById('clip-picker-add');
+  add.disabled = !sel.length;
+  add.textContent = sel.length > 1 ? `Add ${sel.length} clips` : 'Add clip';
+  const shown = clipPickerGrid.querySelectorAll('.clip-picker-item').length;
+  document.getElementById('clip-picker-hint').textContent = sel.length
+    ? `${sel.length} selected; they'll be added in the numbered order.`
+    : `${shown} of ${clipPickerState.items.length} clips · click to select, double-click to add one · hover to preview`;
+}
+
+function addPickedClips() {
+  const byPath = new Map(clipPickerState.items.map(i => [i.filePath, i]));
+  const items = clipPickerState.selected.map(fp => byPath.get(fp)).filter(Boolean);
+  if (!items.length) return;
+  closeClipPicker();
+  addMediaClips(items);
+}
+
+document.getElementById('media-add-clip').addEventListener('click', openClipPicker);
+document.getElementById('clip-picker-cancel').addEventListener('click', closeClipPicker);
+document.getElementById('clip-picker-add').addEventListener('click', addPickedClips);
+clipPicker.addEventListener('click', e => { if (e.target === clipPicker) closeClipPicker(); });
+clipPickerSearch.addEventListener('input', renderClipPicker);
+document.getElementById('clip-picker-project').addEventListener('change', renderClipPicker);
+document.getElementById('clip-picker-sort').addEventListener('change', renderClipPicker);
+document.getElementById('clip-picker-kind').addEventListener('click', e => {
+  const b = e.target.closest('button[data-kind]');
+  if (!b) return;
+  clipPickerState.kind = b.dataset.kind;
+  document.querySelectorAll('#clip-picker-kind button').forEach(x => x.classList.toggle('on', x === b));
+  renderClipPicker();
+});
+// Enter adds the selection (or the only match); Esc closes. Editor shortcuts stay out of it.
+clipPicker.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.preventDefault(); closeClipPicker(); }
+  else if (e.key === 'Enter' && e.target === clipPickerSearch) {
+    e.preventDefault();
+    const matches = filteredClipItems();
+    if (clipPickerState.selected.length) addPickedClips();
+    else if (matches.length === 1) { closeClipPicker(); addMediaClips(matches); }
+  }
+  e.stopPropagation();
+});
+
+// ── Crop box: a layer over the frame area of the canvas, in canvas-pixel coordinates ──
+function positionMediaCropLayer() {
+  if (!mediaEdit) return;
+  const wrap = document.getElementById('cw');
+  const w = wrap.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+  // Only the frame: the canvas can grow past it if an annotation is drawn off the edge.
+  Object.assign(mediaCropLayer.style, {
+    left: `${c.left - w.left + wrap.scrollLeft}px`,
+    top: `${c.top - w.top + wrap.scrollTop}px`,
+    width: `${mediaEdit.W * (c.width / canvas.width)}px`,
+    height: `${mediaEdit.H * (c.height / canvas.height)}px`,
+  });
+}
+window.addEventListener('resize', positionMediaCropLayer);
+// The dock sits above the bottom toolbar; bottom-anchored overlays (tool readout, toasts)
+// shift up by its height, which changes as annotation rows are added.
+new ResizeObserver(() => {
+  document.body.style.setProperty('--video-dock-h', `${videoDock.hidden ? 0 : videoDock.offsetHeight}px`);
+}).observe(videoDock);
+
+// Switches the canvas between the cropped view and the whole frame (while cropping).
+function applyMediaView() {
+  const me = mediaEdit;
+  const r = mediaViewRect(me);
+  bgImage = me.crop && !me.cropping ? me.view : me.frame;
+  if (bgImage === me.view) { me.view.width = r.w; me.view.height = r.h; }
+  canvas.width = r.w;
+  canvas.height = r.h;
+  paintMediaView();
+  fitZoom(); updateCanvasView(); render();
+}
+
+function paintMediaView() {
+  const me = mediaEdit;
+  if (!me?.crop || me.cropping) return;
+  const c = me.crop;
+  me.viewCtx.drawImage(me.frame, c.x, c.y, c.w, c.h, 0, 0, c.w, c.h);
+}
+
+// Undo/redo restore a crop this way (the snapshot already has matching annotations/size).
+function setMediaCropView(crop) {
+  const me = mediaEdit;
+  me.crop = crop;
+  me.cropping = false;
+  syncMediaCropUI();
+  applyMediaView();
+}
+
+function setMediaCropping(on) {
+  const me = mediaEdit;
+  if (!me) return;
+  if (on !== me.cropping) {
+    if (on) {
+      recordHistory();   // the state before this crop edit, in its own coordinates
+      me.cropBefore = me.crop;
+      me.cropUndoDepth = undoStack.length;
+      if (me.crop) anns.forEach(a => moveAnn(a, me.crop.x, me.crop.y));
+      me.cropping = true;
+    } else {
+      me.cropping = false;
+      if (me.crop) anns.forEach(a => moveAnn(a, -me.crop.x, -me.crop.y));
+      // Nothing changed: drop the undo step recorded on the way in.
+      if (sameMediaCrop(me.crop, me.cropBefore) && undoStack.length === me.cropUndoDepth) undoStack.pop();
+      else scheduleVideoSessionSave();
+    }
+    applyMediaView();
+  }
+  syncMediaCropUI();
+}
+
+function syncMediaCropUI() {
+  const me = mediaEdit;
+  mediaCropLayer.hidden = !me.cropping;
+  mediaCropLayer.style.pointerEvents = me.cropping ? 'auto' : 'none';
+  document.getElementById('media-crop-toggle').classList.toggle('on', me.cropping);
+  document.getElementById('media-crop-toggle').textContent = me.cropping ? 'Done cropping' : (me.crop ? 'Edit crop' : 'Crop');
+  document.getElementById('media-crop-reset').hidden = !me.cropping || !me.crop;
+  positionMediaCropLayer();
+  renderMediaCrop();
+}
+
+function renderMediaCrop() {
+  const me = mediaEdit;
+  if (!me) return;
+  let box = mediaCropLayer.querySelector('.media-crop-box');
+  if (!me.crop) { box?.remove(); return; }
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'media-crop-box';
+    box.innerHTML = '<span class="media-crop-size"></span>';
+    mediaCropLayer.appendChild(box);
+  }
+  const { x, y, w, h } = me.crop, W = me.W, H = me.H;
+  Object.assign(box.style, { left: `${x / W * 100}%`, top: `${y / H * 100}%`, width: `${w / W * 100}%`, height: `${h / H * 100}%` });
+  box.firstChild.textContent = `${Math.round(w)} × ${Math.round(h)}`;
+}
+
+function mediaSourcePoint(e) {
+  const r = mediaCropLayer.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * mediaEdit.W,
+    y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)) * mediaEdit.H,
+  };
+}
+
+mediaCropLayer.addEventListener('pointerdown', e => {
+  const me = mediaEdit;
+  if (!me?.cropping || e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const p0 = mediaSourcePoint(e);
+  const W = me.W, H = me.H;
+  const moving = e.target.closest('.media-crop-box') && me.crop ? { ...me.crop } : null;
+  const move = ev => {
+    if (mediaEdit !== me) return;
+    const p = mediaSourcePoint(ev);
+    if (moving) {
+      me.crop = {
+        ...moving,
+        x: Math.max(0, Math.min(W - moving.w, moving.x + p.x - p0.x)),
+        y: Math.max(0, Math.min(H - moving.h, moving.y + p.y - p0.y)),
+      };
+    } else {
+      me.crop = { x: Math.min(p0.x, p.x), y: Math.min(p0.y, p.y), w: Math.abs(p.x - p0.x), h: Math.abs(p.y - p0.y) };
+    }
+    renderMediaCrop();
+  };
+  trackMediaDrag(move, () => {
+    if (mediaEdit !== me) return;
+    if (me.crop && (me.crop.w < MEDIA_MIN_CROP || me.crop.h < MEDIA_MIN_CROP)) me.crop = null;
+    if (me.crop) me.crop = { x: Math.round(me.crop.x), y: Math.round(me.crop.y), w: Math.round(me.crop.w), h: Math.round(me.crop.h) };
+    syncMediaCropUI();
+  });
+});
+
+document.getElementById('media-crop-toggle').addEventListener('click', () => setMediaCropping(!mediaEdit?.cropping));
+document.getElementById('media-crop-reset').addEventListener('click', () => {
+  if (!mediaEdit?.cropping) return;
+  mediaEdit.crop = null;
+  syncMediaCropUI();
+});
+
+// ── Annotations on every frame ──
+// The canvas annotations are in canvas pixels; the painter shifts them into the crop, scales
+// them to the output size, blurs from that output frame's own pixels, and skips annotations
+// outside their time range at timeline time t.
+function mediaOverlayPainter(overlay, crop) {
+  if (!overlay?.length) return null;
+  const shifted = cloneAnns(overlay);
+  if (crop.x || crop.y) shifted.forEach(a => moveAnn(a, -crop.x, -crop.y));
+  return (ctx, outW, outH, base, t) => {
+    ctx.save();
+    ctx.setTransform(outW / crop.w, 0, 0, outH / crop.h, 0, 0);
+    shifted.forEach(a => { if (annVisibleAt(a, t)) drawAnn(ctx, a, base, crop.w, crop.h, false); });
+    ctx.restore();
+  };
+}
+
+async function mediaAnnotationPainter(me) {
+  // Pasted-image annotations draw nothing until their image has loaded.
+  await Promise.all(anns.filter(a => a.type === 'image' && a.src).map(a => imageReady(a.src).catch(() => null)));
+  return mediaOverlayPainter(anns, mediaViewRect(me));
+}
+
+// Renders one finished frame (clip at timeline time T, cropped, with annotations) into ctx.
+function mediaFrameRenderer(me, painter) {
+  const crop = me.crop || mediaFullRect(me);
+  const work = document.createElement('canvas');
+  work.width = me.W; work.height = me.H;
+  const workCtx = work.getContext('2d');
+  const scratch = new Map();
+  const base = document.createElement('canvas');
+  return async (ctx, w, h, c, T) => {
+    await drawMediaComposition(me, workCtx, c, Math.min(T - c.offset, c.source.duration), scratch);
+    ctx.drawImage(work, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
+    if (!painter) return;
+    if (base.width !== w || base.height !== h) { base.width = w; base.height = h; }
+    base.getContext('2d').drawImage(ctx.canvas, 0, 0);   // blur samples the clean frame
+    painter(ctx, w, h, base, T);
+  };
+}
+
+// ── Per-annotation timing (video mode) ──
+// An annotation shows for the whole video unless it has t0/t1. The lane under the timeline has
+// one bar per annotation: click to select, drag the selected bar to slide its range, drag its
+// ends to trim it (which also turns a whole-video annotation into a timed one). The Inspector's
+// "Show during" buttons set the range from the playhead.
+const ANN_GLYPH = { arrow: '↗', text: 'T', box: '▭', highlight: '▬', blur: '≋', draw: '✏', image: '🖼' };
+let annLaneKey = '';
+
+function syncAnnTimingUI() {
+  const a = selectedAnn(), me = mediaEdit;
+  document.getElementById('insp-timing').hidden = !me || !a;
+  if (!me) { annLaneKey = ''; return; }
+  renderAnnLane();
+  if (!a) return;
+  const part = a.t0 != null || a.t1 != null;
+  const D = me.duration;
+  document.getElementById('insp-time-all').classList.toggle('on', !part);
+  document.getElementById('insp-time-part').classList.toggle('on', part);
+  document.getElementById('insp-time-range').hidden = !part;
+  document.getElementById('insp-t0').textContent = `From ${fmtMediaTime(a.t0 ?? 0)}`;
+  document.getElementById('insp-t1').textContent = `To ${fmtMediaTime(a.t1 ?? D)}`;
+}
+
+// Rebuilt only when annotations, their timing or the selection change: this runs on every
+// preview frame during playback.
+function renderAnnLane() {
+  const me = mediaEdit, D = me.duration;
+  const key = JSON.stringify([selectedIdx, D, anns.map(a => [a.type, a.color, a.t0, a.t1])]);
+  if (key === annLaneKey) return;
+  annLaneKey = key;
+  const lane = document.getElementById('media-ann-lane');
+  lane.innerHTML = '';
+  anns.forEach((a, i) => {
+    const timed = a.t0 != null || a.t1 != null;
+    const t0 = Math.min(a.t0 ?? 0, D), t1 = Math.min(a.t1 ?? D, D);   // clips can be removed after timing is set
+    const row = document.createElement('div');
+    row.className = 'media-ann-row';
+    const bar = document.createElement('div');
+    bar.className = `media-ann-bar ${timed ? 'timed' : 'whole'}${i === selectedIdx ? ' selected' : ''}`;
+    // Blur/highlight colours can be near-black; keep every bar visible on the dark dock.
+    bar.style.background = a.type === 'blur' ? '#8b8fa3' : (a.color || '#6c4ef6');
+    bar.style.left = `${t0 / D * 100}%`;
+    bar.style.width = `${(t1 - t0) / D * 100}%`;
+    bar.textContent = ANN_GLYPH[a.type] || '•';
+    bar.title = `${a.type} · ${timed ? `${fmtMediaTime(t0)}–${fmtMediaTime(t1)}` : 'whole video'}`;
+    bar.addEventListener('pointerdown', e => onAnnBarDown(e, i));
+    if (i === selectedIdx) {
+      for (const end of ['start', 'end']) {
+        const h = document.createElement('div');
+        h.className = `media-ann-handle ${end}`;
+        h.title = end === 'start' ? 'Drag to set when it appears' : 'Drag to set when it disappears';
+        h.addEventListener('pointerdown', e => dragAnnTiming(e, end === 'start' ? 't0' : 't1'));
+        bar.appendChild(h);
+      }
+    }
+    row.appendChild(bar);
+    lane.appendChild(row);
+  });
+}
+
+function onAnnBarDown(e, i) {
+  const me = mediaEdit;
+  if (!me || e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  stopMediaPlayback();
+  const a = anns[i];
+  if (selectedIdx !== i) {
+    selectedIdx = i;
+    updateInspector();
+    // Jump to where it's visible, so selecting it also shows it.
+    if (annVisibleAt(a, me.t)) render(); else drawMediaPreview(a.t0 ?? 0);
+    return;
+  }
+  // Already selected and timed: slide the whole range, keeping its length.
+  if (a.t0 == null && a.t1 == null) return;
+  const D = me.duration, t0 = a.t0 ?? 0, len = (a.t1 ?? D) - t0;
+  const from = mediaTimeFromEvent(e);
+  let recorded = false;
+  trackMediaDrag(ev => {
+    if (mediaEdit !== me) return;
+    if (!recorded) { recordHistory(); recorded = true; }   // one undo step, and none for a plain click
+    a.t0 = Math.max(0, Math.min(D - len, t0 + mediaTimeFromEvent(ev) - from));
+    a.t1 = a.t0 + len;
+    scheduleVideoSessionSave();
+    drawMediaPreview(a.t0);
+    updateInspector();
+  });
+}
+
+function setAnnTiming(fn) {
+  if (!mediaEdit || !selectedAnn()) return;
+  mutateSelected(fn);   // records undo, re-renders, refreshes the Inspector
+  renderMediaTimeline();
+}
+
+document.getElementById('insp-time-all').addEventListener('click', () =>
+  setAnnTiming(a => { delete a.t0; delete a.t1; }));
+document.getElementById('insp-time-part').addEventListener('click', () => setAnnTiming(a => {
+  const D = mediaEdit.duration;
+  a.t0 = Math.max(0, Math.min(mediaEdit.t, D - MEDIA_MIN_TRIM));
+  a.t1 = Math.min(D, a.t0 + 3);
+}));
+document.getElementById('insp-t0-set').addEventListener('click', () => setAnnTiming(a => {
+  a.t1 ??= mediaEdit.duration;
+  a.t0 = Math.max(0, Math.min(mediaEdit.t, a.t1 - MEDIA_MIN_TRIM));
+}));
+document.getElementById('insp-t1-set').addEventListener('click', () => setAnnTiming(a => {
+  a.t0 ??= 0;
+  a.t1 = Math.min(mediaEdit.duration, Math.max(mediaEdit.t, a.t0 + MEDIA_MIN_TRIM));
+}));
+
+function dragAnnTiming(e, key) {
+  const a = selectedAnn();
+  if (!mediaEdit || !a) return;
+  recordHistory();   // one undo step for the whole drag
+  dragMediaTimeline(e, t => {
+    const D = mediaEdit.duration;
+    a.t0 ??= 0; a.t1 ??= D;
+    if (key === 't0') a.t0 = Math.max(0, Math.min(t, a.t1 - MEDIA_MIN_TRIM));
+    else a.t1 = Math.min(D, Math.max(t, a.t0 + MEDIA_MIN_TRIM));
+    scheduleVideoSessionSave();
+    drawMediaPreview(key === 't0' ? a.t0 : a.t1);   // show the frame at the edge being dragged
+    updateInspector();
+  });
+}
+
+// ── Auto-save: the session lives next to the video and is restored on the next Edit ──
+let videoSessionTimer = null;
+
+function scheduleVideoSessionSave() {
+  if (!mediaEdit) return;
+  clearTimeout(videoSessionTimer);
+  videoSessionTimer = setTimeout(() => saveVideoSessionNow(), 700);
+}
+
+function saveVideoSessionNow() {
+  clearTimeout(videoSessionTimer);
+  const me = mediaEdit;
+  // Mid-crop, annotations are temporarily in whole-frame coordinates; Done cropping saves.
+  if (!me || me.cropping) return;
+  window.electronAPI?.videoSessionSave?.({
+    filePath: me.origin,
+    session: {
+      version: 1, W: me.W, H: me.H, crop: me.crop,
+      clips: me.clips.map(c => ({ name: c.item.filename, start: c.start, end: c.end })),
+      anns: cloneAnns(anns),
+    },
+  })?.catch?.(err => console.error('video session save failed', err));
+}
+
+// ── Export / frame grab ──
+function syncMediaFormat() {
+  document.getElementById('media-gif-opts').hidden = document.getElementById('media-format').value !== 'gif';
+}
+document.getElementById('media-format').addEventListener('change', syncMediaFormat);
+
+function setMediaBusy(label) {
+  const busy = !!label;
+  videoDock.querySelectorAll('.media-edit-row button, .media-edit-row select, .media-clips button').forEach(el => { el.disabled = busy; });
+  document.getElementById('media-progress').hidden = !busy;
+  if (busy) {
+    document.getElementById('media-progress-label').textContent = label;
+    document.getElementById('media-progress-bar').style.width = '0%';
+  }
+}
+
+async function exportMediaEdit() {
+  const me = mediaEdit;
+  if (!me || me.exporting) return;
+  stopMediaPlayback();
+  setMediaCropping(false);
+  const format = document.getElementById('media-format').value;
+  const controller = new AbortController();
+  me.exporting = controller;
+  setMediaBusy(format === 'gif' ? 'Making GIF…' : 'Encoding MP4…');
+  try {
+    // The output is each clip's trimmed range, back to back. tOut (output time) maps to a clip
+    // and to timeline time T, which is what annotation timing uses.
+    const spans = me.clips.map(c => ({ c, from: c.offset + c.start, len: c.end - c.start }));
+    const renderFrame = mediaFrameRenderer(me, await mediaAnnotationPainter(me));
+    const crop = me.crop || mediaFullRect(me);
+    const result = await window.MediaEditor.exportMedia({
+      compose: {
+        width: crop.w, height: crop.h, duration: mediaOutputDuration(me),
+        // Each clip's trimmed sound, back to back, matching the frames (null = silence).
+        audio: spans.map(s => ({ buffer: s.c.audio, start: s.c.start, end: s.c.end })),
+        renderFrame: (ctx, w, h, tOut) => {
+          let k = 0, acc = 0;
+          while (k < spans.length - 1 && tOut >= acc + spans[k].len) acc += spans[k++].len;
+          const s = spans[k];
+          // Stay inside the span: its end is the next clip's start on the timeline.
+          return renderFrame(ctx, w, h, s.c, s.from + Math.min(tOut - acc, s.len - 1e-3));
+        },
+      },
+      format,
+      fps: format === 'gif' ? Number(document.getElementById('media-gif-fps').value) : undefined,
+      maxWidth: format === 'gif' ? Number(document.getElementById('media-gif-width').value) : undefined,
+      onProgress: f => { document.getElementById('media-progress-bar').style.width = `${Math.round(f * 100)}%`; },
+      signal: controller.signal,
+    });
+    const saved = await window.electronAPI.saveMediaEdit({ bytes: result.bytes, ext: result.ext, sourcePath: me.clips[0].item.filePath });
+    if (!saved?.success) throw new Error('save failed');
+    // The engine exports video-only if this Mac can't encode AAC; say so rather than silently.
+    const lostSound = format === 'mp4' && !result.hasAudio && me.clips.some(c => c.audio);
+    toast(lostSound ? `Saved ${saved.item.filename} (without sound: audio encoding isn't available)` : `Saved ${saved.item.filename}`);
+    const project=activeProject();
+    if (project!=='all' && linkedFolders[project]) {
+      const assignments=getProjectAssignments();
+      assignments[saved.item.filePath]=project;
+      setProjectAssignments(assignments);
+      copyToProjectFolder(project,[saved.item.filePath]);
+    }
+    exitMediaEdit();
+    await loadGallery();
+    openMediaViewer(saved.item);
+  } catch (err) {
+    if (err?.name === 'AbortError') toast('Export cancelled');
+    else { console.error('media export failed', err); toast('Export failed'); }
+  } finally {
+    // Always re-enable the controls: on success the session is already closed, and the
+    // next session reuses the same buttons.
+    me.exporting = null;
+    setMediaBusy(null);
+  }
+}
+
+document.getElementById('media-export').addEventListener('click', exportMediaEdit);
+document.getElementById('media-cancel').addEventListener('click', () => mediaEdit?.exporting?.abort());
+document.getElementById('video-dock-close').addEventListener('click', () => exitMediaEdit({ reopenViewer: true }));
+
+// The current frame (cropped, with annotations) becomes a normal capture; main saves it and
+// sends it back as new image data, which closes the video editor.
+document.getElementById('media-frame').addEventListener('click', async () => {
+  const me = mediaEdit;
+  if (!me) return;
+  stopMediaPlayback();
+  setMediaCropping(false);
+  try {
+    const crop = me.crop || mediaFullRect(me);
+    const out = document.createElement('canvas');
+    out.width = crop.w; out.height = crop.h;
+    const renderFrame = mediaFrameRenderer(me, await mediaAnnotationPainter(me));
+    await renderFrame(out.getContext('2d'), out.width, out.height, mediaClipAt(me, me.t), me.t);
+    window.electronAPI.saveFrameCapture(out.toDataURL('image/png'));
+  } catch (err) {
+    console.error('frame grab failed', err);
+    toast('Could not grab this frame');
+  }
+});
+
 async function openGalleryItem(filePath) {
   const result=await window.electronAPI.galleryLoad(filePath);
   if (!result) return false;
@@ -3092,13 +4612,18 @@ function showGalleryContext(item,x,y) {
     menu.appendChild(b);
   };
   const multi=targets.length>1;
-  add(multi?`${targets.length} selected`:'Open',()=>{ if(!multi) openGalleryItem(item.filePath); });
-  if (!multi) add(isPinned(item.filePath)?'Unpin':'Pin',()=>togglePin(item.filePath));
-  if (!multi) add('Rename',()=>renameGalleryItem(item));
+  add(multi?`${targets.length} selected`:'Open',()=>{ if(!multi) openGalleryEntry(item); });
+  const anyExternal=targets.some(fp=>galleryItemsByPath.get(fp)?.external);
+  if (!multi && !anyExternal) add(isPinned(item.filePath)?'Unpin':'Pin',()=>togglePin(item.filePath));
+  if (!multi && !anyExternal) add('Rename',()=>renameGalleryItem(item));
   if (!multi) add('Reveal in Finder',()=>window.electronAPI.galleryReveal(item.filePath));
-  addProjectSubmenu();
-  add('Remove from Project',()=>assignManyToProject(targets,'all'));
-  add('Delete',()=>multi?deleteGalleryTargets(targets):deleteGalleryItem(item),'danger');
+  if (!anyExternal) {
+    addProjectSubmenu();
+    add('Remove from Project',()=>assignManyToProject(targets,'all'));
+  }
+  const mediaTargets=targets.map(fp=>galleryItemsByPath.get(fp)).filter(isMediaItem);
+  if (multi && mediaTargets.length===targets.length) add('Combine into video',()=>enterMediaEdit(mediaTargets));
+  if (!anyExternal) add('Delete',()=>multi?deleteGalleryTargets(targets):deleteGalleryItem(item),'danger');
   menu.style.left=Math.min(x,window.innerWidth-210)+'px';
   menu.style.top=Math.min(y,window.innerHeight-190)+'px';
   menu.style.display='block';
@@ -3156,11 +4681,17 @@ async function loadGallery() {
   if (!window.electronAPI) return;
   const assignments=getProjectAssignments();
   const items=await window.electronAPI.galleryList([...getGalleryPins(), ...Object.keys(assignments)]);
+  galleryItemsByPath=new Map(items.map(item=>[item.filePath,item]));
   const q=document.getElementById('gallery-search').value.trim().toLowerCase();
   const project=activeProject();
   let filtered=project==='all'
     ? items.filter(item=>!assignments[item.filePath])
     : items.filter(item=>assignments[item.filePath]===project);
+  if (project!=='all' && linkedFolders[project]) {
+    const folder=await window.electronAPI.projectFolderList(project);
+    folder.items.forEach(item=>galleryItemsByPath.set(item.filePath,item));
+    filtered=filtered.concat(folder.items);
+  }
   filtered=q?filtered.filter(item=>item.filename.toLowerCase().includes(q)):filtered;
   const scroll=document.getElementById('gallery-scroll');
   scroll.innerHTML='';
@@ -3178,10 +4709,30 @@ async function loadGallery() {
     div.dataset.fp=item.filePath;
     div.draggable=true;
 
-    const img=document.createElement('img');
-    img.src=item.thumb;
-    img.draggable=false;
+    const img=document.createElement('div');
+    img.className='gallery-thumb';
     img.title='Drag card to move. Drag ⇲ to export.';
+    if (item.thumb) {
+      const pic=document.createElement('img');
+      pic.src=item.thumb; pic.draggable=false;
+      img.appendChild(pic);
+    } else {
+      // e.g. .webm recordings, which the OS can't thumbnail
+      const empty=document.createElement('div');
+      empty.className='gallery-thumb-empty'; empty.textContent='▶';
+      img.appendChild(empty);
+    }
+    if (isMediaItem(item)) {
+      const badge=document.createElement('span');
+      badge.className='media-badge'; badge.textContent=item.kind==='gif' ? 'GIF' : '▶ VIDEO';
+      img.appendChild(badge);
+    }
+    if (item.external) {
+      const fb=document.createElement('span');
+      fb.className='folder-badge'; fb.textContent='📁';
+      img.appendChild(fb);
+      img.title=`In the linked folder "${linkedFolders[item.projectId]?.name || ''}"`;
+    }
 
     const lbl=document.createElement('div');
     lbl.className='gallery-item-name';
@@ -3224,7 +4775,7 @@ async function loadGallery() {
     // Click → select/open in editor
     div.addEventListener('click',e=>{
       selectGalleryItem(item.filePath,e);
-      if (!e.shiftKey && !e.metaKey && !e.ctrlKey) openGalleryItem(item.filePath);
+      if (!e.shiftKey && !e.metaKey && !e.ctrlKey) openGalleryEntry(item);
     });
     div.addEventListener('contextmenu',e=>{
       e.preventDefault();
@@ -3333,10 +4884,21 @@ async function loadRuntimeBadge() {
 // ── Receive from main ─────────────────────────────────────────────────────────
 if (window.electronAPI) {
   window.electronAPI.onImageData(({imageDataURL,savedFilePath})=>{
+    // A new capture replaces the document: close the video editor / player first.
+    exitMediaEdit();
+    closeMediaViewer();
     loadImageWithAnns(imageDataURL,savedFilePath,[]);
     flashAutoSaved();
-    // Switch to All Captures so new item is never hidden by a project filter
-    if (activeProject() !== 'all') {
+    // With a linked project open, the capture joins it (and its folder).
+    const linkedProject=activeProject()!=='all' && linkedFolders[activeProject()] ? activeProject() : null;
+    if (linkedProject && savedFilePath) {
+      const assignments=getProjectAssignments();
+      assignments[savedFilePath]=linkedProject;
+      setProjectAssignments(assignments);
+      copyToProjectFolder(linkedProject,[savedFilePath]);
+    }
+    // Otherwise switch to All Captures so the new item is never hidden by a project filter
+    else if (activeProject() !== 'all') {
       localStorage.setItem(ACTIVE_PROJECT_KEY, 'all');
       renderProjects();
     }

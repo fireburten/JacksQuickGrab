@@ -41,7 +41,9 @@ CAPTURE
 • Choose a window from live thumbnails of your open windows
 • Delayed full-screen capture (5 seconds) from the menu bar
 • Live pixel-size readout while you drag; press Space to take the whole screen instead
-• Record a selected area of your screen to a video file
+• Record a selected area of your screen to a video file, with your Mac's sound and/or your microphone if you choose
+• Record a selected area as an animated GIF (up to 30 seconds)
+• Scrolling capture: scroll a long or wide page in any direction and it's stitched into one image
 • Optional auto-copy puts every new capture straight on your clipboard
 
 ANNOTATE
@@ -60,14 +62,17 @@ COPY TEXT AND TABLES
 • Text recognition runs on your Mac using Apple's Vision framework and reads text in many languages, including Chinese, Japanese and Korean (macOS 13 or later)
 
 ORGANIZE
-• Recent captures sidebar with search
+• Recent captures sidebar with search; GIFs and recordings play right in the app
+• Edit recordings and GIFs: trim, crop, combine clips, add arrows, text, and blur for the whole clip or just part of it, turn a video into a GIF, or save any frame as a screenshot
 • Pin favorites, rename captures, and group them into projects
+• Link a project to any folder: captures you add are copied there, and the folder's images, GIFs, and videos appear in the project
 • Drag a capture, annotations included, from the sidebar into any other app
 • Reveal in Finder, or delete to the Trash
 
 EXPORT
 • Copy the annotated image, or the untouched original, in one click
 • Save as PNG or JPG
+• Share with AirDrop, Mail, Messages, and more
 
 YOUR SHORTCUTS
 • Every capture hotkey can be changed. Defaults:
@@ -83,10 +88,10 @@ PRIVATE BY DESIGN
 • No analytics, no tracking, and no network connections
 • Captures are saved as regular image files in Pictures ▸ Jack's Picker
 
-Jack's Picker needs Screen Recording permission to capture your screen. macOS will ask the first time, and you can change it any time in System Settings ▸ Privacy & Security.
+Jack's Picker needs Screen Recording permission to capture your screen, and Microphone permission only if you turn on the microphone for a recording. macOS asks the first time, and you can change either any time in System Settings ▸ Privacy & Security.
 ```
 
-2,618 chars (limit 4,000)
+3,318 chars (limit 4,000)
 
 ## Keywords [100]
 
@@ -155,7 +160,7 @@ Jack's Picker is a menu bar app (LSUIElement), so there is no Dock icon and no m
 On first launch a short welcome dialog explains this.
 
 2. SCREEN RECORDING PERMISSION
-Capturing the screen requires the macOS Screen Recording permission (NSScreenCaptureUsageDescription is set). Without it, macOS only returns the desktop wallpaper. It is used only when the user takes a screenshot or starts a recording. To grant it: System Settings > Privacy & Security > Screen & System Audio Recording > enable Jack's Picker, then quit and reopen the app (macOS requires a relaunch). The app shows a dialog with an "Open Settings" button that links directly to that pane. No other permissions are requested. The global hotkeys don't need Accessibility or Input Monitoring access.
+Capturing the screen requires the macOS Screen Recording permission (NSScreenCaptureUsageDescription is set). Without it, macOS only returns the desktop wallpaper. It is used only when the user takes a screenshot or starts a recording. To grant it: System Settings > Privacy & Security > Screen & System Audio Recording > enable Jack's Picker, then quit and reopen the app (macOS requires a relaunch). The app shows a dialog with an "Open Settings" button that links directly to that pane. The same permission covers recording the Mac's own sound when the user turns on 🔊 (system audio) in the capture bar. The Microphone permission (NSMicrophoneUsageDescription is set) is requested only when the user turns on 🎙 (microphone) next to Record; both toggles are off by default, and audio is used only in screen recordings. No other permissions are requested. The global hotkeys don't need Accessibility or Input Monitoring access.
 
 3. GLOBAL HOTKEYS (all user-configurable in the editor under Tools > Capture Hotkeys)
 - Capture Region: Command-Shift-2
@@ -189,7 +194,7 @@ Output from the Python check (`len()` on each field exactly as written above):
 | Alternate name 2 | 30 | 29 |
 | Subtitle | 30 | 29 |
 | Promotional text | 170 | 156 |
-| Description | 4000 | 2,618 |
+| Description | 4000 | 3,318 |
 | Keywords | 100 | 99 |
 | What's New | 4000 | 439 |
 | Review notes | 4000 | 2,855 (with the `[CONTACT EMAIL]` placeholder) |

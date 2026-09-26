@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; media-src mediastream:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; media-src mediastream:; base-uri 'none'; form-action 'none'">
 <link rel="stylesheet" href="fonts/poppins.css">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -34,6 +34,7 @@ body {
   padding: 8px;
 }
 .hud.collapsed .mode-btn,
+.hud.collapsed .audio-toggles,
 .hud.collapsed .sep,
 .hud.collapsed .hist-btn {
   display: none;
@@ -117,6 +118,23 @@ body {
   cursor: pointer !important; -webkit-app-region: no-drag;
 }
 .rec-stop:hover { background: #dc2626; }
+.audio-toggles { display: flex; flex-direction: column; gap: 3px; margin-left: -1px; -webkit-app-region: no-drag; }
+.audio-toggle {
+  width: 24px; height: 22px; border: none; border-radius: 7px; cursor: pointer;
+  background: rgba(255,255,255,.05); font-size: 11px; line-height: 1; filter: grayscale(1); opacity: .45;
+}
+.audio-toggle:hover { opacity: .8; }
+.audio-toggle.on { background: rgba(108,78,246,.45); filter: none; opacity: 1; }
+.rec-audio { font-size: 12px; letter-spacing: 2px; }
+.rec-note {
+  border: none; background: rgba(245,158,11,.18); color: #fbbf24; font: 600 11px inherit;
+  padding: 4px 8px; border-radius: 8px; cursor: pointer; -webkit-app-region: no-drag; white-space: nowrap;
+}
+.rec-bar.scroll .rec-dot { background: #6c4ef6; }
+.rec-bar.scroll .rec-stop { background: #6c4ef6; }
+.rec-bar.scroll .rec-stop:hover { background: #5a3de0; }
+.rec-bar.busy .rec-dot { animation: none; opacity: .4; }
+.rec-bar.busy .rec-stop { opacity: .5; pointer-events: none; }
 .hist-btn {
   display: flex;
   flex-direction: column;
@@ -164,13 +182,17 @@ body {
   <button class="mode-btn" data-mode="full" title="Full Screen">
     <span class="ic">⛶</span><span class="lbl">Full</span>
   </button>
-  <button class="mode-btn" data-mode="scroll" title="Scrolling capture (coming soon)" disabled>
+  <button class="mode-btn" data-mode="scroll" title="Scrolling capture">
     <span class="ic">↕</span><span class="lbl">Scroll</span>
   </button>
   <button class="mode-btn" data-mode="record" title="Record screen">
     <span class="ic">⏺</span><span class="lbl">Record</span>
   </button>
-  <button class="mode-btn" data-mode="gif" title="Record GIF (coming soon)" disabled>
+  <div class="audio-toggles">
+    <button class="audio-toggle" data-audio="system" type="button" title="Record system audio (sound your Mac plays)">🔊</button>
+    <button class="audio-toggle" data-audio="mic" type="button" title="Record microphone">🎙</button>
+  </div>
+  <button class="mode-btn" data-mode="gif" title="Record GIF">
     <span class="ic">◑</span><span class="lbl">GIF</span>
   </button>
 
@@ -183,10 +205,14 @@ body {
   <div class="rec-bar" id="rec-bar">
     <span class="rec-dot"></span>
     <span class="rec-timer" id="rec-timer">0:00</span>
+    <span class="rec-audio" id="rec-audio"></span>
+    <button class="rec-note" id="rec-note" type="button" hidden></button>
     <button class="rec-stop" id="btn-stop-rec">■ Stop</button>
   </div>
 </div>
 
+<script src="scroll-stitch.js"></script>
+<script src="vendor/gifenc.js"></script>
 <script>
 const hud = document.querySelector('.hud');
 const dragHandle = document.querySelector('.drag-handle');
@@ -207,7 +233,7 @@ dragHandle.addEventListener('dblclick', () => setCollapsed(!collapsed));
 setCollapsed(collapsed);
 
 // ── Capture buttons ───────────────────────────────────────────────────────────
-document.querySelectorAll('.mode-btn:not(:disabled):not([data-mode="record"])').forEach(btn => {
+document.querySelectorAll('.mode-btn:not(:disabled)').forEach(btn => {
   btn.addEventListener('click', () => {
     btn.classList.add('flash');
     setTimeout(() => btn.classList.remove('flash'), 600);
@@ -261,92 +287,286 @@ document.querySelector('.hist-btn').addEventListener('click', () => {
   if (window.electronAPI) window.electronAPI.hudHistory();
 });
 
-// ── Screen recording ──────────────────────────────────────────────────────────
-let mediaRecorder = null;
-let recChunks     = [];
-let recInterval   = null;
-let recSecs       = 0;
-let recDrawing    = false;
+// ── Streamed captures: screen recording, GIF, scrolling capture ───────────────
+// Main opens the region overlay, then sends the chosen rect here. All three modes
+// read the same display stream cropped to that rect; they differ in what they do
+// with the frames.
+const GIF_FPS = 12, GIF_MAX_WIDTH = 800, GIF_MAX_SECS = 30;
+const SCROLL_FPS = 8, SCROLL_MAX_LENGTH = 20000;
 
 const recBar   = document.getElementById('rec-bar');
 const recTimer = document.getElementById('rec-timer');
+const stopBtn  = document.getElementById('btn-stop-rec');
+let session = null;   // { kind, finish(), ... } while a streamed capture is running
 
-function setRecordingUI(on) {
-  recBar.style.display = on ? 'flex' : 'none';
-  document.querySelectorAll('.mode-btn, .sep, .hist-btn')
-    .forEach(el => el.style.display = on ? 'none' : '');
+function setRecordingUI(kind) {
+  recBar.style.display = kind ? 'flex' : 'none';
+  recBar.classList.toggle('scroll', kind === 'scroll');
+  recBar.classList.remove('busy');
+  stopBtn.textContent = kind === 'scroll' ? '✓ Done' : '■ Stop';
+  document.querySelectorAll('.mode-btn, .audio-toggles, .sep, .hist-btn')
+    .forEach(el => el.style.display = kind ? 'none' : '');
+  if (!kind) showRecNote(null);
 }
 
-function tickTimer() {
-  recSecs++;
-  const m = Math.floor(recSecs / 60), s = recSecs % 60;
-  recTimer.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+function setStatus(text) { recTimer.textContent = text; }
+
+function startTimer() {
+  const t0 = Date.now();
+  const tick = () => {
+    const secs = Math.floor((Date.now() - t0) / 1000);
+    setStatus(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
+  };
+  tick();
+  return setInterval(tick, 1000);
 }
 
-// Record button → open region overlay in main
-document.querySelector('[data-mode="record"]').addEventListener('click', () => {
-  if (window.electronAPI) window.electronAPI.hudCapture('record');
-});
+// Opens the display stream and returns a function that draws the region into a canvas.
+async function openRegionStream({ x, y, w, h, displayW, displayH }, { systemAudio = false } = {}) {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: systemAudio });
+  } catch (err) {
+    if (!systemAudio) throw err;
+    // System audio capture needs macOS 13+; record the screen without it rather than failing.
+    console.warn('system audio unavailable', err);
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    showRecNote('No system audio', 'System audio needs macOS 13 or later');
+  }
+  const video = document.createElement('video');
+  video.srcObject = stream;
+  video.muted = true;
+  await new Promise(resolve => { video.onloadedmetadata = resolve; });
+  await video.play();
+  // Logical rect → video pixels (the stream is usually at the display's native resolution).
+  const sx = video.videoWidth / displayW, sy = video.videoHeight / displayH;
+  const crop = { x: Math.round(x * sx), y: Math.round(y * sy), w: Math.round(w * sx), h: Math.round(h * sy) };
+  const drawTo = (ctx, outW = crop.w, outH = crop.h) =>
+    ctx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, outW, outH);
+  const close = () => stream.getTracks().forEach(t => t.stop());
+  return { crop, drawTo, close, audioTracks: stream.getAudioTracks() };
+}
 
-// Main sends back the selected rect after user draws on the overlay
+function startVideo(src, { mic = null } = {}) {
+  const canvas = document.createElement('canvas');
+  canvas.width = src.crop.w; canvas.height = src.crop.h;
+  const ctx = canvas.getContext('2d');
+  let drawing = true;
+  (function draw() {
+    if (!drawing) return;
+    src.drawTo(ctx);
+    requestAnimationFrame(draw);
+  })();
+
+  // System audio and mic are mixed into one track (MediaRecorder records a single audio track).
+  const audioSources = [...src.audioTracks, ...(mic ? mic.getAudioTracks() : [])];
+  let audioCtx = null;
+  const tracks = canvas.captureStream(30).getVideoTracks();
+  if (audioSources.length) {
+    audioCtx = new AudioContext();
+    const mix = audioCtx.createMediaStreamDestination();
+    audioSources.forEach(t => audioCtx.createMediaStreamSource(new MediaStream([t])).connect(mix));
+    tracks.push(...mix.stream.getAudioTracks());
+  }
+  const withAudio = tracks.length > 1;
+  const mimeType = [withAudio ? 'video/mp4;codecs=avc1,mp4a.40.2' : 'video/mp4', 'video/webm']
+    .find(t => MediaRecorder.isTypeSupported(t));
+  const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+  const recorder = new MediaRecorder(new MediaStream(tracks), { mimeType });
+  document.getElementById('rec-audio').textContent =
+    `${src.audioTracks.length ? '🔊' : ''}${mic ? '🎙' : ''}`;
+  const chunks = [];
+  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  const saved = new Promise(resolve => {
+    recorder.onstop = async () => {
+      drawing = false;
+      src.close();
+      mic?.getTracks().forEach(t => t.stop());
+      audioCtx?.close();
+      const buffer = await new Blob(chunks, { type: mimeType }).arrayBuffer();
+      await window.electronAPI.saveRecording(buffer, ext);
+      resolve();
+    };
+  });
+  recorder.start(1000);
+  const timer = startTimer();
+  return {
+    async finish() {
+      clearInterval(timer);
+      if (recorder.state !== 'inactive') recorder.stop();
+      window.electronAPI.recordingStopped();
+      await saved;
+    },
+  };
+}
+
+// GIF frames are palette-quantized and encoded as they arrive, so memory stays at
+// the size of the compressed GIF rather than every raw frame.
+function startGif(src) {
+  const { GIFEncoder, quantize, applyPalette } = window.gifenc;
+  const scale = Math.min(1, GIF_MAX_WIDTH / src.crop.w);
+  const gw = Math.max(1, Math.round(src.crop.w * scale)), gh = Math.max(1, Math.round(src.crop.h * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = gw; canvas.height = gh;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const encoder = GIFEncoder();
+  const delay = Math.round(1000 / GIF_FPS);
+  let frames = 0;
+
+  const grab = () => {
+    src.drawTo(ctx, gw, gh);
+    const { data } = ctx.getImageData(0, 0, gw, gh);
+    const palette = quantize(data, 256);
+    encoder.writeFrame(applyPalette(data, palette), gw, gh, { palette, delay });
+    if (++frames >= GIF_MAX_SECS * GIF_FPS) stopSession();
+  };
+  const interval = setInterval(grab, delay);
+  const timer = startTimer();
+  return {
+    async finish() {
+      clearInterval(interval);
+      clearInterval(timer);
+      src.close();
+      window.electronAPI.recordingStopped();
+      if (!frames) return;
+      encoder.finish();
+      const bytes = encoder.bytes();
+      await window.electronAPI.saveRecording(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), 'gif');
+    },
+  };
+}
+
+// The user scrolls the page under the (click-through) overlay; each frame is matched
+// against the last one and only the newly revealed rows (or columns) are appended.
+// Direction isn't chosen up front: a stitcher per direction sees frames until one detects
+// movement, then capture locks to that direction.
+function startScroll(src) {
+  const ARROWS = { down: '↓', up: '↑', right: '→', left: '←' };
+  const candidates = Object.keys(ARROWS)
+    .map(direction => new window.DirectionalScrollStitcher(direction, { maxLength: SCROLL_MAX_LENGTH }));
+  let stitcher = null;
+  const canvas = document.createElement('canvas');
+  canvas.width = src.crop.w; canvas.height = src.crop.h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const lengthLabel = px => `${Math.round(px / window.devicePixelRatio).toLocaleString()} px`;
+
+  const grab = () => {
+    src.drawTo(ctx);
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    if (!stitcher) {
+      const moved = candidates.find(c => c.addFrame(frame).status === 'appended');
+      if (!moved) { setStatus('Scroll any way'); return; }
+      stitcher = moved;
+    } else {
+      const result = stitcher.addFrame(frame);
+      if (result.status === 'lost') { setStatus('Scroll slower'); return; }
+      if (result.status === 'full') { setStatus('Max length'); stopSession(); return; }
+    }
+    setStatus(`${ARROWS[stitcher.direction]} ${lengthLabel(stitcher.length)}`);
+  };
+  const interval = setInterval(grab, Math.round(1000 / SCROLL_FPS));
+  grab();
+  return {
+    async finish() {
+      clearInterval(interval);
+      src.close();
+      // Never scrolled: the single captured frame is still a valid screenshot.
+      const done = stitcher || candidates[0];
+      if (!done.length) { window.electronAPI.scrollCaptureDone(null); return; }
+      const { width, height, data } = done.result();
+      const out = document.createElement('canvas');
+      out.width = width; out.height = height;
+      out.getContext('2d').putImageData(new ImageData(data, width, height), 0, 0);
+      window.electronAPI.scrollCaptureDone(out.toDataURL('image/png'));
+    },
+  };
+}
+
+async function stopSession() {
+  if (!session) return;
+  const current = session;
+  session = null;
+  recBar.classList.add('busy');
+  setStatus(current.kind === 'video' ? 'Saving…' : current.kind === 'gif' ? 'Encoding…' : 'Stitching…');
+  try { await current.finish(); }
+  catch (err) { console.error(`${current.kind} capture failed:`, err); }
+  setRecordingUI(null);
+}
+
+// ── Recording audio: 🔊 system audio and 🎙 microphone toggles (remembered) ──
+const REC_AUDIO_KEY = 'jqg-rec-audio';
+let recAudioPrefs = { system: false, mic: false };
+try { recAudioPrefs = { ...recAudioPrefs, ...JSON.parse(localStorage.getItem(REC_AUDIO_KEY) || '{}') }; } catch {}
+
+function syncAudioToggles() {
+  document.querySelectorAll('.audio-toggle').forEach(b => {
+    const on = !!recAudioPrefs[b.dataset.audio];
+    b.classList.toggle('on', on);
+    const what = b.dataset.audio === 'mic' ? 'microphone' : 'system audio (sound your Mac plays)';
+    b.title = `${on ? 'Recording' : 'Not recording'} ${what}: click to turn ${on ? 'off' : 'on'}`;
+  });
+}
+
+document.querySelectorAll('.audio-toggle').forEach(b => b.addEventListener('click', async () => {
+  const key = b.dataset.audio;
+  recAudioPrefs[key] = !recAudioPrefs[key];
+  // Ask for the mic when it's switched on, so the prompt doesn't interrupt a recording.
+  if (key === 'mic' && recAudioPrefs.mic && window.electronAPI && !(await window.electronAPI.micAccess())) {
+    recAudioPrefs.mic = false;
+    b.title = 'Microphone access is off: allow Jack\'s Picker in System Settings → Privacy & Security → Microphone';
+    window.electronAPI.openMicSettings();
+  }
+  localStorage.setItem(REC_AUDIO_KEY, JSON.stringify(recAudioPrefs));
+  syncAudioToggles();
+}));
+syncAudioToggles();
+
+async function openMicStream() {
+  try {
+    if (!(await window.electronAPI.micAccess())) { showRecNote('Mic blocked', 'Allow the microphone in System Settings', true); return null; }
+    return await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    console.warn('microphone unavailable', err);
+    showRecNote('No microphone', 'No microphone could be opened');
+    return null;
+  }
+}
+
+// A short warning in the recording bar (e.g. audio that couldn't be captured). Clicking a
+// permission note opens the relevant settings.
+let recNoteTimer = null;
+function showRecNote(text, title = '', openSettings = false) {
+  const note = document.getElementById('rec-note');
+  clearTimeout(recNoteTimer);
+  note.hidden = !text;
+  if (!text) return;
+  note.textContent = `⚠ ${text}`;
+  note.title = title;
+  note.onclick = openSettings ? () => window.electronAPI.openMicSettings() : null;
+  recNoteTimer = setTimeout(() => { note.hidden = true; }, 6000);
+}
+
 if (window.electronAPI) {
-  window.electronAPI.onRecordingRegion(async ({ x, y, w, h, displayW, displayH }) => {
+  window.electronAPI.onRecordingRegion(async region => {
+    const kind = region.kind || 'video';
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-
-      const video = document.createElement('video');
-      video.srcObject = stream;
-      video.muted = true;
-      await new Promise(resolve => { video.onloadedmetadata = resolve; });
-      await video.play();
-
-      // Map logical rect coords → video pixel coords
-      const sx = video.videoWidth  / displayW;
-      const sy = video.videoHeight / displayH;
-      const cropX = Math.round(x * sx), cropY = Math.round(y * sy);
-      const cropW = Math.round(w * sx), cropH = Math.round(h * sy);
-
-      const canvas = document.createElement('canvas');
-      canvas.width = cropW; canvas.height = cropH;
-      const ctx = canvas.getContext('2d');
-
-      recDrawing = true;
-      (function draw() {
-        if (!recDrawing) return;
-        ctx.drawImage(video, -cropX, -cropY, video.videoWidth, video.videoHeight);
-        requestAnimationFrame(draw);
-      })();
-
-      const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
-      const ext      = mimeType === 'video/mp4' ? 'mp4' : 'webm';
-      mediaRecorder  = new MediaRecorder(canvas.captureStream(30), { mimeType });
-      recChunks = [];
-
-      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
-      mediaRecorder.onstop = async () => {
-        recDrawing = false;
-        stream.getTracks().forEach(t => t.stop());
-        const blob   = new Blob(recChunks, { type: mimeType });
-        const buffer = await blob.arrayBuffer();
-        await window.electronAPI.saveRecording(buffer, ext);
-      };
-
-      mediaRecorder.start(1000);
-      recSecs = 0; recTimer.textContent = '0:00';
-      recInterval = setInterval(tickTimer, 1000);
-      setRecordingUI(true);
+      // Audio applies to screen recordings only (not GIF or scrolling capture).
+      const audio = kind === 'video' ? recAudioPrefs : { system: false, mic: false };
+      const mic = audio.mic ? await openMicStream() : null;
+      const src = await openRegionStream(region, { systemAudio: audio.system });
+      const start = { video: startVideo, gif: startGif, scroll: startScroll }[kind];
+      setRecordingUI(kind);
+      session = { kind, ...start(src, { mic }) };
     } catch (err) {
-      console.error('Recording failed:', err);
+      console.error(`${kind} capture failed:`, err);
+      setRecordingUI(null);
+      if (kind === 'scroll') window.electronAPI.scrollCaptureDone(null);
+      else window.electronAPI.recordingStopped();
     }
   });
 }
 
-document.getElementById('btn-stop-rec').addEventListener('click', () => {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-  clearInterval(recInterval);
-  setRecordingUI(false);
-  if (window.electronAPI) window.electronAPI.recordingStopped();
-});
+stopBtn.addEventListener('click', stopSession);
 </script>
 </body>
 </html>

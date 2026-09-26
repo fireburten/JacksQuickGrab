@@ -9,8 +9,14 @@
   <array>
     <string>TEAMID.com.rindworks.jackspicker</string>
   </array>
+  <!-- Remember folders linked to projects across launches (security-scoped bookmarks). -->
+  <key>com.apple.security.files.bookmarks.app-scope</key>
+  <true/>
   <!-- Save As dialog, opening/dropping images from anywhere. -->
   <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <!-- Microphone narration in screen recordings (HUD's 🎙 toggle). -->
+  <key>com.apple.security.device.audio-input</key>
   <true/>
   <!-- Captures and recordings are stored in ~/Pictures/Jack's Picker. -->
   <key>com.apple.security.assets.pictures.read-write</key>

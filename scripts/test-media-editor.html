@@ -1,0 +1,498 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>media-editor tests</title>
+<body>
+<script src="../src/vendor/gifenc.js"></script>
+<script src="../src/vendor/mp4-muxer.js"></script>
+<script src="../src/media-editor.js"></script>
+<script>
+'use strict';
+// Fixtures are made here: a 3 s 320x240 canvas animation recorded to MP4 and WebM, and a GIF
+// with known delays. The top-left quadrant's colour encodes the animation frame number
+// (R = ones digit, G = tens digit); the other quadrants are solid red / green / blue.
+// Audio fixtures are the same animation recorded with a steady WebAudio sine tone.
+const ME = window.MediaEditor;
+const W = 320, H = 240, REC_FPS = 30, REC_SECONDS = 3;
+const lines = [];
+let passed = 0, failed = 0;
+
+function check(name, ok, detail = '') {
+  if (ok) passed++; else failed++;
+  lines.push(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`);
+}
+const log = s => lines.push('     ' + s);
+const near = (a, b, tol) => Math.abs(a - b) <= tol;
+
+function codeColour(n) {
+  return [20 + (n % 10) * 23, 20 + Math.floor(n / 10) * 23, 128];
+}
+function decodeCode([r, g]) {
+  return Math.round((r - 20) / 23) + 10 * Math.round((g - 20) / 23);
+}
+function paintFixture(ctx, n) {
+  const [r, g, b] = codeColour(n);
+  ctx.fillStyle = `rgb(${r},${g},${b})`; ctx.fillRect(0, 0, W / 2, H / 2);
+  ctx.fillStyle = '#f00'; ctx.fillRect(W / 2, 0, W / 2, H / 2);
+  ctx.fillStyle = '#0f0'; ctx.fillRect(0, H / 2, W / 2, H / 2);
+  ctx.fillStyle = '#00f'; ctx.fillRect(W / 2, H / 2, W / 2, H / 2);
+}
+
+async function record(mimeType) {
+  return URL.createObjectURL(await recordBlob(mimeType));
+}
+
+async function recordBlob(mimeType, toneHz = 0) {
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  paintFixture(ctx, 0);
+  const stream = canvas.captureStream(REC_FPS);
+  let actx = null;
+  if (toneHz) {
+    actx = new AudioContext({ sampleRate: 48000 });
+    await actx.resume();
+    const osc = new OscillatorNode(actx, { frequency: toneHz });
+    const gain = new GainNode(actx, { gain: 0.5 });
+    const dest = actx.createMediaStreamDestination();
+    osc.connect(gain).connect(dest);
+    osc.start();
+    stream.addTrack(dest.stream.getAudioTracks()[0]);
+  }
+  const rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4e6 });
+  const chunks = [];
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  const stopped = new Promise(r => rec.onstop = r);
+  rec.start();
+  const t0 = performance.now();
+  await new Promise(done => {
+    const tick = () => {
+      const el = (performance.now() - t0) / 1000;
+      if (el >= REC_SECONDS) { rec.stop(); return done(); }
+      paintFixture(ctx, Math.floor(el * REC_FPS));
+      setTimeout(tick, 5);
+    };
+    tick();
+  });
+  await stopped;
+  stream.getTracks().forEach(t => t.stop());
+  if (actx) await actx.close();
+  return new Blob(chunks, { type: mimeType });
+}
+
+// ---- Audio analysis ----
+async function decodeOut(bytes) {
+  try { return await new OfflineAudioContext(1, 1, 48000).decodeAudioData(bytes.slice().buffer); } catch { return null; }
+}
+function slice(buf, ch, from, to) {
+  return buf.getChannelData(ch).subarray(Math.round(from * buf.sampleRate), Math.round(to * buf.sampleRate));
+}
+const rms = x => Math.sqrt(x.reduce((a, v) => a + v * v, 0) / Math.max(1, x.length));
+function goertzel(x, hz, rate) {
+  const k = 2 * Math.cos(2 * Math.PI * hz / rate);
+  let s1 = 0, s2 = 0;
+  for (let i = 0; i < x.length; i++) { const s0 = x[i] + k * s1 - s2; s2 = s1; s1 = s0; }
+  return (s1 * s1 + s2 * s2 - k * s1 * s2) / (x.length * x.length);
+}
+// Which of 440 / 880 Hz dominates buf[ch] in [from, to], or 'silent'.
+function toneIn(buf, from, to, ch = 0) {
+  const x = slice(buf, ch, from, to);
+  if (rms(x) < 0.01) return 'silent';
+  const a = goertzel(x, 440, buf.sampleRate), b = goertzel(x, 880, buf.sampleRate);
+  return a > 10 * b ? 440 : b > 10 * a ? 880 : '?';
+}
+const onsetOf = (buf, ch = 0) => buf.getChannelData(ch).findIndex(v => Math.abs(v) > 0.05) / buf.sampleRate;
+// Counts 'trak' boxes (one per track) in an MP4 with the moov up front.
+function trackCount(bytes) {
+  let n = 0;
+  for (let i = 0; i + 4 <= bytes.length; i++) {
+    if (bytes[i] === 0x74 && bytes[i + 1] === 0x72 && bytes[i + 2] === 0x61 && bytes[i + 3] === 0x6b) n++;
+  }
+  return n;
+}
+
+const GIF_W = 200, GIF_H = 150;
+const GIF_DELAYS = [100, 200, 50, 0, 10, 300];            // ms as written
+const GIF_EFFECTIVE = [100, 200, 50, 100, 100, 300];       // <= 10ms plays as 100ms
+const GIF_COLOURS = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0], [0, 255, 255], [255, 0, 255]];
+function makeGif() {
+  const { GIFEncoder, quantize, applyPalette } = window.gifenc;
+  const enc = GIFEncoder();
+  const c = document.createElement('canvas'); c.width = GIF_W; c.height = GIF_H;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  GIF_COLOURS.forEach(([r, g, b], i) => {
+    ctx.fillStyle = `rgb(${r},${g},${b})`; ctx.fillRect(0, 0, GIF_W, GIF_H);
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 20, 20);    // white marker top-left
+    const { data } = ctx.getImageData(0, 0, GIF_W, GIF_H);
+    const palette = quantize(data, 256);
+    enc.writeFrame(applyPalette(data, palette), GIF_W, GIF_H, { palette, delay: GIF_DELAYS[i] });
+  });
+  enc.finish();
+  return enc.bytes();
+}
+
+async function pixelsOf(source, t, crop) {
+  const url = await ME.grabFrame(source, t, crop);
+  const img = new Image(); img.src = url; await img.decode();
+  const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  return { w: img.width, h: img.height, px: (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data) };
+}
+const colourNear = (a, b, tol = 40) => a.slice(0, 3).every((v, i) => Math.abs(v - b[i]) <= tol);
+
+async function decodeGif(bytes) {
+  const dec = new ImageDecoder({ data: bytes, type: 'image/gif' });
+  await dec.tracks.ready; await dec.completed;
+  const count = dec.tracks.selectedTrack.frameCount;
+  const delays = [];
+  let w = 0, h = 0;
+  for (let i = 0; i < count; i++) {
+    const { image } = await dec.decode({ frameIndex: i });
+    w = image.displayWidth; h = image.displayHeight;
+    delays.push(Math.round((image.duration || 0) / 1000));
+    image.close();
+  }
+  dec.close();
+  return { count, w, h, delays };
+}
+
+async function openBytes(bytes, kind) {
+  if (kind === 'gif') return ME.openSource({ kind, bytes });
+  return ME.openSource({ kind: 'video', fileURL: URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' })) });
+}
+
+async function timed(label, clipSeconds, fn) {
+  const t0 = performance.now();
+  const r = await fn();
+  const s = (performance.now() - t0) / 1000;
+  log(`${label}: ${s.toFixed(2)} s for ${clipSeconds.toFixed(2)} s of output (${(clipSeconds / s).toFixed(2)}x realtime)`);
+  return r;
+}
+
+async function testVideoSource(name, url) {
+  const t0 = performance.now();
+  const src = await ME.openSource({ kind: 'video', fileURL: url });
+  log(`${name}: opened in ${Math.round(performance.now() - t0)} ms — ${src.width}x${src.height}, ${src.duration.toFixed(3)} s, fps≈${src.fps}`);
+  check(`${name} open: size`, src.width === W && src.height === H, `${src.width}x${src.height}`);
+  check(`${name} open: finite duration ≈ 3 s`, Number.isFinite(src.duration) && near(src.duration, REC_SECONDS, 0.35), String(src.duration));
+
+  const first = decodeCode((await pixelsOf(src, 0, null)).px(40, 40));
+  check(`${name} drawFrame at t=0 right after open`, first <= 2, `#${first}`);
+
+  // Frame content follows time (tolerate recorder latency), and increases monotonically.
+  const seen = [];
+  for (const t of [0.2, 1.0, 1.1, 2.0, 2.5]) {
+    const p = await pixelsOf(src, t, null);
+    seen.push({ t, n: decodeCode(p.px(40, 40)) });
+  }
+  const offsets = seen.map(s => s.n - s.t * REC_FPS);
+  const spread = Math.max(...offsets) - Math.min(...offsets);
+  check(`${name} drawFrame: frame code tracks time`, spread <= 4 && seen.every((s, i) => !i || s.n > seen[i - 1].n),
+    seen.map(s => `t=${s.t}→#${s.n}`).join(' '));
+  const d = seen[2].n - seen[1].n;
+  check(`${name} drawFrame: 0.1 s apart ≈ 3 frames apart`, d >= 2 && d <= 4, `Δ=${d}`);
+
+  const red = await pixelsOf(src, 1, { x: 160, y: 0, w: 160, h: 120 });
+  check(`${name} grabFrame crop: size + content`, red.w === 160 && red.h === 120 && colourNear(red.px(80, 60), [255, 0, 0]) && colourNear(red.px(2, 2), [255, 0, 0]),
+    `${red.w}x${red.h} ${red.px(80, 60)}`);
+
+  // drawFrame scales the crop into the whole canvas.
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  await ME.drawFrame(src, ctx, 1, { x: 0, y: 120, w: 160, h: 120 });
+  check(`${name} drawFrame crop scaled into canvas`, colourNear(Array.from(ctx.getImageData(60, 60, 1, 1).data), [0, 255, 0]));
+  return src;
+}
+
+async function testAudio(gifBytes) {
+  const AV = 'video/mp4;codecs=avc1,mp4a.40.2';
+  const t0 = performance.now();
+  const [tone440, tone880, silentVid] = await Promise.all([
+    recordBlob(AV, 440), recordBlob(AV, 880), recordBlob('video/mp4;codecs=avc1'),
+  ].map(p => p.then(async b => new Uint8Array(await b.arrayBuffer()))));
+  log(`audio fixtures recorded in ${Math.round(performance.now() - t0)} ms`);
+
+  // decodeAudio
+  let ta = performance.now();
+  const a440 = await ME.decodeAudio(tone440);
+  log(`decodeAudio (3 s AAC mp4): ${Math.round(performance.now() - ta)} ms`);
+  const a880 = await ME.decodeAudio(tone880);
+  check('decodeAudio tone mp4: AudioBuffer ≈ 3 s, 440 Hz',
+    a440 instanceof AudioBuffer && near(a440.duration, REC_SECONDS, 0.35) && toneIn(a440, 0.5, 2.5) === 440,
+    a440 ? `${a440.duration.toFixed(3)} s ${a440.sampleRate} Hz ${a440.numberOfChannels} ch rms=${rms(slice(a440, 0, 0.5, 2.5)).toFixed(3)}` : 'null');
+  check('decodeAudio 880 fixture is 880 Hz', a880 && toneIn(a880, 0.5, 2.5) === 880);
+  check('decodeAudio video-only mp4 → null', (await ME.decodeAudio(silentVid)) === null);
+  check('decodeAudio gif → null', (await ME.decodeAudio(gifBytes)) === null);
+  check('decodeAudio leaves input intact', tone440.byteLength > 1000 && (await ME.decodeAudio(tone440)) !== null);
+
+  const renderFrame = (ctx, w, h, t) => { ctx.fillStyle = t < 1 ? '#f00' : '#00f'; ctx.fillRect(0, 0, w, h); };
+  const compose = (duration, audio) => ({ width: W, height: H, duration, renderFrame, audio });
+
+  // [440 for 1 s] + [silence 1 s]
+  const prog = [];
+  const out1 = await timed('compose mp4 + audio 2 s (incl. one-off priming measurement)', 2, () =>
+    ME.exportMedia({ compose: compose(2, [{ buffer: a440, start: 0.5, end: 1.5 }, { buffer: null, start: 0, end: 1 }]), format: 'mp4', onProgress: p => prog.push(p) }));
+  check('audio export: progress monotonic to 1, audio slice after 0.95', prog[prog.length - 1] === 1 && prog.every((p, i) => !i || p >= prog[i - 1]) && prog.some(p => p > 0.95 && p < 1),
+    `${prog.length} calls`);
+  const d1 = await decodeOut(out1.bytes);
+  check('audio export: hasAudio, 2 tracks, AAC decodes ≈ 2 s', out1.hasAudio && trackCount(out1.bytes) === 2 && d1 && near(d1.duration, 2, 0.03),
+    d1 ? `${d1.duration.toFixed(3)} s ${d1.numberOfChannels} ch` : 'no audio decoded');
+  check('audio export: first second 440 Hz (both channels), second silent',
+    d1 && toneIn(d1, 0.1, 0.9) === 440 && toneIn(d1, 0.1, 0.9, 1) === 440 && toneIn(d1, 1.1, 1.95) === 'silent',
+    d1 && `[${toneIn(d1, 0.1, 0.9)}, ${toneIn(d1, 1.1, 1.95)}] rms ${rms(slice(d1, 0, 0.1, 0.9)).toFixed(3)} / ${rms(slice(d1, 0, 1.1, 1.95)).toFixed(4)}`);
+  const v1 = await openBytes(out1.bytes, 'video');
+  const p1 = await pixelsOf(v1, 0.5, null), p2 = await pixelsOf(v1, 1.5, null);
+  check('audio export still plays as video: ≈ 2 s, frames right', near(v1.duration, 2, 0.05) && colourNear(p1.px(10, 10), [255, 0, 0]) && colourNear(p2.px(10, 10), [0, 0, 255]),
+    `${v1.duration}s ${v1.width}x${v1.height}`);
+  v1.close();
+
+  // A/V sync: silence then tone; the tone must start where its segment does (encoder priming hidden).
+  const outSync = await ME.exportMedia({ compose: compose(1.5, [{ buffer: null, start: 0, end: 0.5 }, { buffer: a440, start: 0.5, end: 1.5 }]), format: 'mp4' });
+  const dSync = await decodeOut(outSync.bytes);
+  const onset = dSync ? onsetOf(dSync) : -1;
+  check('A/V sync: tone onset at 0.5 s (±5 ms), audio length ≈ video', dSync && near(onset, 0.5, 0.005) && near(dSync.duration, 1.5, 0.03),
+    `onset ${(onset * 1000).toFixed(1)} ms, audio ${dSync && dSync.duration.toFixed(4)} s`);
+
+  // [440, 880, 440]; a 22.05 kHz mono buffer is resampled and up-mixed.
+  const rate = 22050, mono = new AudioBuffer({ length: rate, numberOfChannels: 1, sampleRate: rate });
+  mono.getChannelData(0).forEach((_, i, a) => { a[i] = 0.5 * Math.sin(2 * Math.PI * 880 * i / rate); });
+  const out2 = await timed('compose mp4 + 3 audio segments 1.8 s', 1.8, () => ME.exportMedia({ compose: compose(1.8, [
+    { buffer: a440, start: 0.5, end: 1.1 }, { buffer: a880, start: 1.0, end: 1.6 }, { buffer: a440, start: 2.0, end: 2.6 },
+  ]), format: 'mp4' }));
+  const d2 = await decodeOut(out2.bytes);
+  const order = d2 ? [[0.1, 0.5], [0.7, 1.1], [1.3, 1.7]].map(([a, b]) => toneIn(d2, a, b)) : [];
+  check('three segments: 440 / 880 / 440 in order', order.join() === '440,880,440' && near(d2.duration, 1.8, 0.1), `${order} ${d2 && d2.duration.toFixed(3)} s`);
+
+  const out3 = await ME.exportMedia({ compose: compose(1, [{ buffer: mono, start: 0, end: 1 }]), format: 'mp4' });
+  const d3 = await decodeOut(out3.bytes);
+  check('22.05 kHz mono segment → 880 Hz on both channels', d3 && d3.numberOfChannels === 2 && toneIn(d3, 0.1, 0.9) === 880 && toneIn(d3, 0.1, 0.9, 1) === 880,
+    d3 ? `${d3.numberOfChannels} ch ${toneIn(d3, 0.1, 0.9)}/${toneIn(d3, 0.1, 0.9, 1)}` : 'null');
+
+  // Segments that don't add up exactly: audio is padded to the video length.
+  const out4 = await ME.exportMedia({ compose: compose(1.5, [{ buffer: a440, start: 0, end: 1 }]), format: 'mp4' });
+  const d4 = await decodeOut(out4.bytes);
+  check('short segments padded to video length', d4 && near(d4.duration, 1.5, 0.1) && toneIn(d4, 1.1, 1.45) === 'silent', d4 && `${d4.duration.toFixed(3)} s`);
+
+  // No buffers at all → no audio track.
+  const out5 = await ME.exportMedia({ compose: compose(1, [{ buffer: null, start: 0, end: 1 }]), format: 'mp4' });
+  check('all-null audio → no audio track', !out5.hasAudio && trackCount(out5.bytes) === 1 && (await ME.decodeAudio(out5.bytes)) === null,
+    `tracks=${trackCount(out5.bytes)}`);
+
+  // GIF ignores audio.
+  const out6 = await ME.exportMedia({ compose: compose(1, [{ buffer: a440, start: 0, end: 1 }]), format: 'gif', fps: 10 });
+  const dg = await decodeGif(out6.bytes);
+  check('gif export with audio segments', dg.count === 10 && !out6.hasAudio, `count=${dg.count}`);
+
+  // Abort once the audio phase has started (long audio, 1 fps video so frames are quick).
+  const long = Array.from({ length: 30 }, () => ({ buffer: a440, start: 0.5, end: 2.5 }));
+  const ac = new AbortController();
+  let abortedAt = 0, audioPhase = false;
+  try {
+    await ME.exportMedia({ compose: compose(60, long), format: 'mp4', fps: 1, signal: ac.signal, onProgress: p => {
+      if (p > 0.95 && !abortedAt) { audioPhase = true; abortedAt = performance.now(); ac.abort(); }
+    } });
+    check('abort during audio export', false, 'export resolved');
+  } catch (e) {
+    const lag = performance.now() - abortedAt;
+    check('abort during audio encoding → AbortError promptly', e.name === 'AbortError' && audioPhase && lag < 300, `${e.name} after ${Math.round(lag)} ms`);
+  }
+  // And while the video frames are still being rendered.
+  const ac2 = new AbortController();
+  let abortedAt2 = 0;
+  setTimeout(() => { abortedAt2 = performance.now(); ac2.abort(); }, 200);
+  try {
+    await ME.exportMedia({ compose: compose(20, long.slice(0, 10)), format: 'mp4', signal: ac2.signal });
+    check('abort during audio export (video phase)', false, 'export resolved');
+  } catch (e) {
+    const lag = performance.now() - abortedAt2;
+    check('abort during audio export (video phase) → AbortError promptly', e.name === 'AbortError' && abortedAt2 > 0 && lag < 300, `${e.name} after ${Math.round(lag)} ms`);
+  }
+
+  // Full-length audio timing (60 s of audio at 1 fps video isolates the audio cost).
+  await timed('compose mp4 60 s audio (1 fps video)', 60, () =>
+    ME.exportMedia({ compose: compose(60, long), format: 'mp4', fps: 1 }));
+}
+
+async function runTests(real = {}) {
+  try {
+    await run(real);
+  } catch (e) {
+    check('uncaught', false, e && e.stack || String(e));
+  }
+  return { lines, passed, failed };
+}
+
+async function run(real) {
+  log(`VideoEncoder: ${!!window.VideoEncoder}, ImageDecoder: ${!!window.ImageDecoder}, Mp4Muxer: ${!!(window.Mp4Muxer && Mp4Muxer.Muxer)}`);
+
+  // 1+2. Sources
+  const mp4URL = await record('video/mp4;codecs=avc1');
+  const webmURL = await record('video/webm;codecs=vp9');
+  const mp4 = await testVideoSource('mp4', mp4URL);
+  const webm = await testVideoSource('webm', webmURL);
+
+  const gifBytes = makeGif();
+  const gif = await ME.openSource({ kind: 'gif', bytes: gifBytes });
+  const gifTotal = GIF_EFFECTIVE.reduce((a, b) => a + b) / 1000;
+  check('gif open: size + duration', gif.width === GIF_W && gif.height === GIF_H && near(gif.duration, gifTotal, 0.001),
+    `${gif.width}x${gif.height} ${gif.duration}s (want ${gifTotal}) fps≈${gif.fps}`);
+  const starts = GIF_EFFECTIVE.reduce((a, d, i) => (a.push(i ? a[i - 1] + GIF_EFFECTIVE[i - 1] / 1000 : 0), a), []);
+  let gifOk = true;
+  for (let i = 0; i < GIF_COLOURS.length; i++) {
+    const p = await pixelsOf(gif, starts[i] + 0.02, null);
+    if (!colourNear(p.px(100, 100), GIF_COLOURS[i], 10)) gifOk = false;
+  }
+  check('gif drawFrame: each frame at its timeline position', gifOk);
+  const gc = await pixelsOf(gif, 0.15, { x: 0, y: 0, w: 20, h: 20 });
+  check('gif grabFrame crop', gc.w === 20 && gc.h === 20 && colourNear(gc.px(10, 10), [255, 255, 255], 10));
+
+  // 3. MP4 export, trim + crop (odd crop -> even output)
+  const crop = { x: 10, y: 10, w: 231, h: 171 };
+  let progress = [];
+  const outMp4 = await timed('mp4→mp4 export 1.5 s @30fps', 1.5, () =>
+    ME.exportMedia({ clips: [{ source: mp4, start: 0.5, end: 2.0, crop }], format: 'mp4', onProgress: p => progress.push(p) }));
+  log(`mp4 source seek state after export: rVFC misses=${mp4._rvfcMisses}, last presented mediaTime=${mp4._shown && mp4._shown.m}`);
+  check('mp4 export: result shape', outMp4.ext === 'mp4' && outMp4.width === 230 && outMp4.height === 170 && outMp4.frames === 45,
+    `${outMp4.width}x${outMp4.height} frames=${outMp4.frames} dur=${outMp4.duration} bytes=${outMp4.bytes.length}`);
+  check('mp4 export: progress monotonic to 1', progress.length >= 45 && progress[progress.length - 1] === 1 && progress.every((p, i) => !i || p >= progress[i - 1]));
+  const e1 = await openBytes(outMp4.bytes, 'video');
+  check('mp4 export decodes: size + duration ≈ 1.5 s', e1.width === 230 && e1.height === 170 && near(e1.duration, 1.5, 1 / 30 + 0.001),
+    `${e1.width}x${e1.height} ${e1.duration}s`);
+  let matchOk = true; const matchInfo = [];
+  for (const t of [0.1, 0.7, 1.3]) {
+    const a = decodeCode((await pixelsOf(e1, t, null)).px(30, 30));
+    const b = decodeCode((await pixelsOf(mp4, 0.5 + t, null)).px(40, 40));
+    matchInfo.push(`t=${t}: out #${a} src #${b}`);
+    if (Math.abs(a - b) > 1) matchOk = false;
+  }
+  check('mp4 export content = source at start+t', matchOk, matchInfo.join(', '));
+  const redCorner = (await pixelsOf(e1, 0.7, null)).px(225, 50);
+  check('mp4 export crop shows red quadrant at right edge', colourNear(redCorner, [255, 0, 0], 60), String(redCorner));
+  e1.close();
+
+  // 4. MP4 source -> GIF, trim + crop + fps 10 + maxWidth
+  const outGif = await timed('mp4→gif export 1.5 s @10fps', 1.5, () =>
+    ME.exportMedia({ clips: [{ source: mp4, start: 0.5, end: 2.0, crop }], format: 'gif', fps: 10, maxWidth: 100 }));
+  const dg = await decodeGif(outGif.bytes);
+  check('video→gif export: frames/size/delays', dg.count === 15 && dg.w === 100 && dg.h === 74 && outGif.width === 100 && outGif.height === 74 && dg.delays.every(d => d === 100),
+    `count=${dg.count} ${dg.w}x${dg.h} delays=${[...new Set(dg.delays)]} dur=${outGif.duration}`);
+  const gsrc = await ME.openSource({ kind: 'gif', bytes: outGif.bytes });
+  const gOut = decodeCode((await pixelsOf(gsrc, 0.55, null)).px(15, 15));
+  const gRef = decodeCode((await pixelsOf(mp4, 1.0, null)).px(40, 40));
+  check('video→gif export content = source at start+t', Math.abs(gOut - gRef) <= 1, `out #${gOut} src #${gRef}`);
+  gsrc.close();
+
+  // 5. GIF source -> MP4 and webm -> gif default settings
+  const outG2M = await timed('gif→mp4 export 0.85 s @20fps', gifTotal, () =>
+    ME.exportMedia({ clips: [{ source: gif, start: 0, end: gif.duration, crop: null }], format: 'mp4', fps: 20 }));
+  const e2 = await openBytes(outG2M.bytes, 'video');
+  let g2mOk = e2.width === 200 && e2.height === 150 && near(e2.duration, gifTotal, 0.051) && outG2M.frames === 17;
+  const g2mInfo = [];
+  for (let i = 0; i < GIF_COLOURS.length; i++) {
+    const p = (await pixelsOf(e2, starts[i] + 0.03, null)).px(100, 100);
+    g2mInfo.push(p.slice(0, 3).join(','));
+    if (!colourNear(p, GIF_COLOURS[i], 50)) g2mOk = false;
+  }
+  check('gif→mp4 export: size, duration, frame colours', g2mOk, `${e2.width}x${e2.height} ${e2.duration}s frames=${outG2M.frames} [${g2mInfo.join(' | ')}]`);
+  e2.close();
+
+  const outWebmGif = await timed('webm→gif export 3 s @12fps (defaults)', webm.duration, () =>
+    ME.exportMedia({ clips: [{ source: webm, start: 0, end: webm.duration }], format: 'gif' }));
+  const dw = await decodeGif(outWebmGif.bytes);
+  check('webm→gif defaults: 12 fps, full size', dw.w === 320 && dw.h === 240 && near(dw.count, webm.duration * 12, 1) && dw.delays.every(d => d === 80),
+    `count=${dw.count} ${dw.w}x${dw.h} delays=${[...new Set(dw.delays)]}`);
+
+  // 6. Two clips (stitch-ready): second clip is tall -> pillarboxed
+  const outTwo = await timed('two-clip mp4 export 1.0 s', 1.0, () => ME.exportMedia({
+    clips: [
+      { source: webm, start: 0.5, end: 1.0, crop },
+      { source: gif, start: 0, end: 0.5, crop: { x: 0, y: 0, w: 100, h: 150 } },
+    ], format: 'mp4',
+  }));
+  const e3 = await openBytes(outTwo.bytes, 'video');
+  const p1 = await pixelsOf(e3, 0.25, null);
+  const p2 = await pixelsOf(e3, 0.7, null);   // clip 2 at t=0.2 -> gif frame 1 (green)
+  check('two-clip export: duration ≈ sum, same output size', near(e3.duration, 1.0, 1 / 30 + 0.001) && outTwo.frames === 30 && e3.width === 230 && e3.height === 170,
+    `${e3.width}x${e3.height} ${e3.duration}s frames=${outTwo.frames}`);
+  check('two-clip export: second clip letterboxed (black bars, content centred)',
+    colourNear(p2.px(10, 85), [0, 0, 0], 30) && colourNear(p2.px(220, 85), [0, 0, 0], 30) && colourNear(p2.px(115, 85), [0, 255, 0], 60)
+      && !colourNear(p1.px(10, 85), [0, 0, 0], 30),
+    `bar ${p2.px(10, 85)} centre ${p2.px(115, 85)} clip1 edge ${p1.px(10, 85)}`);
+  e3.close();
+
+  // Output fps above the source's: many targets land on an already-shown frame.
+  const out60 = await timed('mp4→mp4 export 1 s @60fps (source ~30)', 1, () =>
+    ME.exportMedia({ clips: [{ source: mp4, start: 1, end: 2 }], format: 'mp4', fps: 60 }));
+  log(`after 60fps export: rVFC misses=${mp4._rvfcMisses}`);
+  check('60 fps export of 30 fps source', out60.frames === 60);
+
+  // 7. drawOverlay: once per frame, drawn into the output, frameCanvas stays clean
+  let calls = 0, cleanOk = true, tOuts = [];
+  const outOv = await ME.exportMedia({
+    clips: [{ source: mp4, start: 1, end: 1.5, crop: null }], format: 'mp4',
+    drawOverlay(ctx, w, h, frameCanvas, tOut) {
+      calls++; tOuts.push(tOut);
+      const fc = frameCanvas.getContext('2d');
+      if (colourNear(Array.from(fc.getImageData(5, 5, 1, 1).data), [255, 0, 255], 30)) cleanOk = false;
+      ctx.fillStyle = '#f0f'; ctx.fillRect(0, 0, 40, 40);
+    },
+  });
+  const ov = await openBytes(outOv.bytes, 'video');
+  const ovp = (await pixelsOf(ov, 0.2, null)).px(10, 10);
+  check('drawOverlay: called once per frame with tOut', calls === outOv.frames && calls === 15 && near(tOuts[14], 14 / 30, 1e-9), `calls=${calls}`);
+  check('drawOverlay: appears in output, frameCanvas clean', colourNear(ovp, [255, 0, 255], 50) && cleanOk, String(ovp));
+  ov.close();
+
+  // 8. Abort
+  const ac = new AbortController();
+  const tStart = performance.now();
+  let abortedAt = 0;
+  setTimeout(() => { abortedAt = performance.now(); ac.abort(); }, 300);
+  try {
+    await ME.exportMedia({ clips: [{ source: webm, start: 0, end: webm.duration }], format: 'mp4', signal: ac.signal });
+    check('abort rejects', false, 'export resolved');
+  } catch (e) {
+    const lag = performance.now() - abortedAt;
+    check('abort rejects with AbortError promptly', e.name === 'AbortError' && abortedAt > 0 && lag < 300, `${e.name} after ${Math.round(lag)} ms`);
+  }
+  // Source is still usable after an aborted export.
+  const after = await pixelsOf(webm, 1, { x: 160, y: 0, w: 160, h: 120 });
+  check('source usable after abort', colourNear(after.px(80, 60), [255, 0, 0]));
+
+  await testAudio(gifBytes);
+
+  // Real recordings (read-only), incl. the file:// path the app uses.
+  if (real.mp4) {
+    try {
+      const src = await ME.openSource({ kind: 'video', fileURL: real.mp4 });
+      log(`real mp4: ${src.width}x${src.height} ${src.duration.toFixed(2)} s fps≈${src.fps}`);
+      const png = await ME.grabFrame(src, Math.min(1, src.duration / 2), null);
+      check('real mp4 (file://): grabFrame not tainted', png.startsWith('data:image/png'));
+      const len = Math.min(3, src.duration);
+      const out = await timed(`real mp4→mp4 ${src.width}x${src.height}`, len, () =>
+        ME.exportMedia({ clips: [{ source: src, start: 0, end: len }], format: 'mp4' }));
+      check('real mp4 export', out.bytes.length > 1000, `${out.width}x${out.height} frames=${out.frames} ${Math.round(out.bytes.length / 1024)} KB`);
+      const outG = await timed(`real mp4→gif ${src.width}x${src.height}`, len, () =>
+        ME.exportMedia({ clips: [{ source: src, start: 0, end: len }], format: 'gif' }));
+      check('real mp4 → gif export', outG.bytes.length > 1000, `${outG.width}x${outG.height} frames=${outG.frames} ${Math.round(outG.bytes.length / 1024)} KB`);
+      src.close();
+    } catch (e) { check('real mp4', false, e.stack || String(e)); }
+  }
+  if (real.gif) {
+    try {
+      const t0 = performance.now();
+      const src = await ME.openSource({ kind: 'gif', bytes: Uint8Array.from(atob(real.gif), c => c.charCodeAt(0)) });
+      log(`real gif ${real.gifName}: ${src.width}x${src.height} ${src.duration.toFixed(2)} s fps≈${src.fps}, opened in ${Math.round(performance.now() - t0)} ms`);
+      const len = Math.min(3, src.duration);
+      const out = await timed('real gif→mp4', len, () =>
+        ME.exportMedia({ clips: [{ source: src, start: 0, end: len }], format: 'mp4' }));
+      check('real gif → mp4 export', out.bytes.length > 1000, `${out.width}x${out.height} frames=${out.frames}`);
+      src.close();
+    } catch (e) { check('real gif', false, e.stack || String(e)); }
+  }
+
+  // Cleanup
+  mp4.close(); webm.close(); gif.close();
+  check('close() removes hidden videos', document.querySelectorAll('video').length === 0, `${document.querySelectorAll('video').length} left`);
+}
+</script>

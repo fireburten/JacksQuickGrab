@@ -123,6 +123,6 @@ Optional: shoot a matching "before" version first (the same capture before Smart
 
 - All five files are the same size (e.g. 2880×1800): run `sips -g pixelWidth -g pixelHeight ~/Desktop/0*.jpg`.
 - No real personal data, notifications, or third-party logos are visible.
-- Nothing shown is disabled or "coming soon". The HUD's **Scroll** and **GIF** buttons are greyed out, so avoid close-ups of the HUD. It's fine small in shot 5.
+- Nothing shown should be disabled or "coming soon". All HUD buttons, including **Scroll** and **GIF**, now work.
 - Upload in order 1 → 5. The first one or two appear in search results, so lead with the hero and the region capture.
 - Recording isn't in these five shots on purpose. While recording, the red "REC" border is excluded from all screen captures (content protection keeps it out of the video), so a screenshot would show only the HUD timer and **Stop** button. If you want a recording shot, add the border in your design tool.

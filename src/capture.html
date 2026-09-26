@@ -264,7 +264,7 @@ if (window.electronAPI) {
 resize();
 
 if (window.electronAPI) {
-  window.electronAPI.onRecordingStart(({ x, y, w, h }) => {
+  window.electronAPI.onRecordingStart(({ kind, x, y, w, h }) => {
     hint.style.display = 'none';
     canvas.style.cursor = 'default';
     // Remove all interaction listeners by replacing the canvas
@@ -274,7 +274,9 @@ if (window.electronAPI) {
     fresh.width = window.innerWidth;
     fresh.height = window.innerHeight;
 
-    const RED = '#EF4444';
+    // Scroll mode is a still capture, not a recording, so it gets the brand colour instead of red.
+    const [r, g, b] = kind === 'scroll' ? [108, 78, 246] : [239, 68, 68];
+    const label = { gif: '◑  GIF', scroll: '↕  SCROLL — scroll in one direction, then click Done' }[kind] || '⏺  REC';
     let t0 = null;
     function drawRec(ts) {
       if (!t0) t0 = ts;
@@ -283,22 +285,21 @@ if (window.electronAPI) {
       rc.clearRect(0, 0, fresh.width, fresh.height);
 
       // Border
-      rc.strokeStyle = `rgba(239,68,68,${alpha})`;
+      rc.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
       rc.lineWidth = 3;
       rc.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
 
       // Corner handles
-      rc.fillStyle = `rgba(239,68,68,${alpha})`;
+      rc.fillStyle = `rgba(${r},${g},${b},${alpha})`;
       [[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([cx,cy]) => {
         rc.beginPath(); rc.arc(cx, cy, 5, 0, Math.PI*2); rc.fill();
       });
 
-      // REC badge
+      // Mode badge
       rc.font = '600 11px system-ui';
-      const label = '⏺  REC';
       const bw = rc.measureText(label).width + 18;
       const bx = x, by = Math.max(4, y - 26);
-      rc.fillStyle = `rgba(239,68,68,${alpha})`;
+      rc.fillStyle = `rgba(${r},${g},${b},${alpha})`;
       rc.beginPath(); rc.roundRect(bx, by, bw, 22, 4); rc.fill();
       rc.fillStyle = '#fff';
       rc.fillText(label, bx + 9, by + 15);

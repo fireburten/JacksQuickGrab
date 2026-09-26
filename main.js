@@ -8,6 +8,7 @@ const fs      = require('fs');
 const os      = require('os');
 const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
+const crypto = require('crypto');
 
 let hudWindow  = null;
 let captureWin = null;
@@ -20,7 +21,8 @@ let lastRegionRect = null;
 let regionDisplay = null;
 let lastRegionDisplayId = null;
 let recordingDisplayId = null;
-let recordingMode  = false;
+// Set while the region overlay is open for a streamed capture: 'video' | 'gif' | 'scroll'.
+let streamMode     = null;
 
 const IS_MAS = !!process.mas;
 // The App Store sandbox points os.homedir() at the app container, so MAS builds
@@ -43,7 +45,9 @@ const MACOS_RESERVED_SHORTCUTS = new Set([
   'CommandOrControl+Shift+4',
   'CommandOrControl+Shift+5',
 ]);
-const RECORDING_EXTS = new Set(['mp4', 'webm']);
+const RECORDING_EXTS = new Set(['mp4', 'webm', 'gif']);
+const HUD_WIDTH = 530;
+const STREAM_MODES = { record: 'video', gif: 'gif', scroll: 'scroll' };
 
 function readSettings() {
   try { return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')); }
@@ -98,10 +102,35 @@ function legacyAnnotationPathFor(filePath) {
   return filePath.replace(/\.(png|jpg|jpeg)$/i, '.json');
 }
 
-function galleryPayload(filePath) {
+const IMAGE_EXT = /\.(png|jpg|jpeg)$/i;
+// GIFs and screen recordings share the captures folder; the gallery lists and plays them
+// but they can't be annotated.
+const MEDIA_EXT = /\.(gif|mp4|webm|mov|m4v)$/i;
+const isImageFile = filePath => IMAGE_EXT.test(filePath);
+const mediaKind = filePath => (/\.gif$/i.test(filePath) ? 'gif' : MEDIA_EXT.test(filePath) ? 'video' : 'image');
+
+// Video and GIF thumbnails come from the OS (QuickLook / Windows shell): nativeImage can't
+// decode either (a GIF loads as an empty image). They're slow-ish, so cache per file version.
+const mediaThumbCache = new Map();
+async function mediaThumb(filePath) {
+  let key;
+  try { key = `${filePath}:${fs.statSync(filePath).mtimeMs}`; } catch { return null; }
+  if (mediaThumbCache.has(key)) return mediaThumbCache.get(key);
+  let dataURL = null;
+  try {
+    const img = await nativeImage.createThumbnailFromPath(filePath, { width: 300, height: 300 });
+    if (!img.isEmpty()) dataURL = img.resize({ width: 150 }).toDataURL();
+  } catch {}   // e.g. .webm, which QuickLook can't preview; the gallery shows a placeholder
+  mediaThumbCache.set(key, dataURL);
+  return dataURL;
+}
+
+async function galleryPayload(filePath) {
   const filename = path.basename(filePath);
-  const img = nativeImage.createFromPath(filePath);
-  const thumb = img.resize({ width: 150 });
+  const kind = mediaKind(filePath);
+  const base = { filename, filePath, fileURL: pathToFileURL(filePath).href, kind };
+  if (kind !== 'image') return { ...base, thumb: await mediaThumb(filePath), annotations: [], canvasSize: null, flatPath: null };
+  const thumb = nativeImage.createFromPath(filePath).resize({ width: 150 }).toDataURL();
   let annotations = [];
   let canvasSize = null;
   try {
@@ -113,20 +142,24 @@ function galleryPayload(filePath) {
     canvasSize = Array.isArray(saved) ? null : (saved.canvasSize || null);
   } catch {}
   return {
-    filename,
-    filePath,
-    fileURL: pathToFileURL(filePath).href,
-    thumb: thumb.toDataURL(),
+    ...base,
+    thumb,
     annotations,
     canvasSize,
     flatPath: fs.existsSync(flatAnnotationPathFor(filePath)) ? flatAnnotationPathFor(filePath) : null,
   };
 }
 
-function safeCapturePath(filePath) {
-  const resolved = path.resolve(filePath);
+// Paths from the renderer must be inside the captures folder. Only screenshots by default;
+// pass allowMedia for actions that also apply to GIFs and recordings (list, reveal, delete, rename, drag).
+// allowLinked: also accept files directly inside a linked project folder. Only for reading
+// (list, preview, play, drag out, edit a copy); nothing in a linked folder is renamed or deleted.
+function safeCapturePath(filePath, { allowMedia = false, allowLinked = false } = {}) {
+  const resolved = path.resolve(String(filePath || ''));
   const root = path.resolve(SAVE_DIR) + path.sep;
-  if (!resolved.startsWith(root) || !/\.(png|jpg|jpeg)$/i.test(resolved)) return null;
+  const inCaptures = resolved.startsWith(root);
+  if (!inCaptures && !(allowLinked && isInLinkedFolder(resolved))) return null;
+  if (!isImageFile(resolved) && !(allowMedia && MEDIA_EXT.test(resolved))) return null;
   return resolved;
 }
 
@@ -138,6 +171,167 @@ function safeCaptureName(name, ext) {
     .trim();
   return (base || `screenshot-${Date.now()}`) + ext.toLowerCase();
 }
+
+// ── Project folders ───────────────────────────────────────────────────────────
+// A project can be linked to a real folder. Captures added to the project are copied into it
+// (annotated screenshots as their flattened image, refreshed when edited), and media already in
+// the folder shows up in the project. The registry lives in settings.json:
+//   projectFolders[projectId] = { path, bookmark, exported: { capture: folderFile }, imported: { capture: folderFile } }
+// exported/imported record which folder files are our own copies, so they're neither listed
+// twice nor ever overwritten unless we made them.
+const FOLDER_LIST_LIMIT = 400;
+const folderWatchers = new Map();
+const folderAccess = new Map();   // MAS: security-scoped access, held while the folder is linked
+
+function projectFolders() { return readSettings().projectFolders || {}; }
+function saveProjectFolders(folders) { writeSettings({ projectFolders: folders }); }
+
+function isInLinkedFolder(resolved) {
+  const dir = path.dirname(resolved) + path.sep;
+  return Object.values(projectFolders()).some(f => path.resolve(f.path) + path.sep === dir);
+}
+
+function uniqueFileIn(dir, filename) {
+  const ext = path.extname(filename), base = path.basename(filename, ext);
+  let name = filename;
+  for (let n = 2; fs.existsSync(path.join(dir, name)); n++) name = `${base}-${n}${ext}`;
+  return name;
+}
+
+function openFolderAccess(projectId, entry) {
+  if (!IS_MAS || !entry.bookmark || folderAccess.has(projectId)) return;
+  try { folderAccess.set(projectId, app.startAccessingSecurityScopedResource(entry.bookmark)); } catch {}
+}
+
+function watchProjectFolder(projectId, entry) {
+  folderWatchers.get(projectId)?.close();
+  let timer = null;
+  try {
+    folderWatchers.set(projectId, fs.watch(entry.path, () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (editorWin && !editorWin.isDestroyed()) editorWin.webContents.send('project-folder-changed', projectId);
+      }, 400);
+    }));
+  } catch {}   // folder gone or unreadable; listing will report it
+}
+
+function releaseProjectFolder(projectId) {
+  folderWatchers.get(projectId)?.close();
+  folderWatchers.delete(projectId);
+  try { folderAccess.get(projectId)?.(); } catch {}
+  folderAccess.delete(projectId);
+}
+
+function startProjectFolders() {
+  Object.entries(projectFolders()).forEach(([id, entry]) => { openFolderAccess(id, entry); watchProjectFolder(id, entry); });
+}
+
+ipcMain.handle('project-folders', () => Object.fromEntries(Object.entries(projectFolders()).map(([id, f]) =>
+  [id, { path: f.path, name: path.basename(f.path), exists: fs.existsSync(f.path) }])));
+
+ipcMain.handle('project-folder-link', async (_e, projectId) => {
+  if (typeof projectId !== 'string' || !projectId) return null;
+  const { canceled, filePaths, bookmarks } = await dialog.showOpenDialog(editorWin, {
+    title: 'Link a folder to this project',
+    buttonLabel: 'Link Folder',
+    properties: ['openDirectory', 'createDirectory'],
+    securityScopedBookmarks: IS_MAS,
+  });
+  if (canceled || !filePaths?.[0]) return null;
+  const folders = projectFolders();
+  const prev = folders[projectId];
+  releaseProjectFolder(projectId);
+  const samePath = prev && path.resolve(prev.path) === path.resolve(filePaths[0]);
+  folders[projectId] = { path: filePaths[0], bookmark: bookmarks?.[0] || null, exported: samePath ? prev.exported : {}, imported: samePath ? prev.imported : {} };
+  saveProjectFolders(folders);
+  openFolderAccess(projectId, folders[projectId]);
+  watchProjectFolder(projectId, folders[projectId]);
+  return { path: filePaths[0], name: path.basename(filePaths[0]), exists: true };
+});
+
+ipcMain.handle('project-folder-unlink', (_e, projectId) => {
+  const folders = projectFolders();
+  if (!folders[projectId]) return false;
+  releaseProjectFolder(projectId);
+  delete folders[projectId];
+  saveProjectFolders(folders);
+  return true;   // the folder and its files are left exactly as they are
+});
+
+ipcMain.on('project-folder-reveal', (_e, projectId) => {
+  const f = projectFolders()[projectId];
+  if (f && fs.existsSync(f.path)) shell.openPath(f.path);
+});
+
+function listFolderFiles(entry) {
+  const ours = new Set([...Object.values(entry.exported || {}), ...Object.values(entry.imported || {})]);
+  return fs.readdirSync(entry.path)
+    .filter(f => !f.startsWith('.') && !ours.has(f) && (isImageFile(f) || MEDIA_EXT.test(f)))
+    .map(filename => {
+      const filePath = path.join(entry.path, filename);
+      const stat = fs.statSync(filePath);
+      return stat.isFile() ? { filename, filePath, time: stat.birthtimeMs || stat.mtimeMs, size: stat.size } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.time - a.time)
+    .slice(0, FOLDER_LIST_LIMIT);
+}
+
+// Folder files as gallery items (external: true). Images get a quick nativeImage thumbnail;
+// GIFs and videos go through the OS thumbnailer like captures do.
+ipcMain.handle('project-folder-list', async (_e, projectId) => {
+  const entry = projectFolders()[projectId];
+  if (!entry || !fs.existsSync(entry.path)) return { items: [], missing: !!entry };
+  try {
+    const items = await Promise.all(listFolderFiles(entry).map(async f => {
+      const kind = mediaKind(f.filePath);
+      const thumb = kind === 'image'
+        ? nativeImage.createFromPath(f.filePath).resize({ width: 150 }).toDataURL()
+        : await mediaThumb(f.filePath);
+      return { ...f, fileURL: pathToFileURL(f.filePath).href, kind, thumb, external: true, projectId, annotations: [], canvasSize: null, flatPath: null };
+    }));
+    return { items, missing: false };
+  } catch { return { items: [], missing: false }; }
+});
+
+// Copies captures into the project's folder. Screenshots go as their annotated (flattened)
+// image when there is one. Re-running refreshes our own copy; a user's file of the same name
+// is never overwritten (we pick a new name instead).
+ipcMain.handle('project-folder-export', (_e, { projectId, filePaths }) => {
+  const folders = projectFolders();
+  const entry = folders[projectId];
+  if (!entry || !fs.existsSync(entry.path) || !Array.isArray(filePaths)) return 0;
+  entry.exported ||= {};
+  let copied = 0;
+  for (const fp of filePaths) {
+    const src = safeCapturePath(fp, { allowMedia: true });
+    if (!src || !fs.existsSync(src)) continue;
+    const captureName = path.basename(src);
+    if (entry.imported?.[captureName]) continue;   // came from this folder: the original is already there
+    const flat = isImageFile(src) ? flatAnnotationPathFor(src) : null;
+    const from = flat && fs.existsSync(flat) ? flat : src;
+    const destName = entry.exported[captureName] || uniqueFileIn(entry.path, captureName);
+    try { fs.copyFileSync(from, path.join(entry.path, destName)); entry.exported[captureName] = destName; copied++; } catch {}
+  }
+  saveProjectFolders(folders);
+  return copied;
+});
+
+// Opening a folder image to annotate it: copy it in as a capture (the original is untouched).
+ipcMain.handle('project-folder-import', async (_e, { projectId, filePath }) => {
+  const folders = projectFolders();
+  const entry = folders[projectId];
+  const src = safeCapturePath(filePath, { allowMedia: true, allowLinked: true });
+  if (!entry || !src || path.dirname(src) !== path.resolve(entry.path)) return null;
+  const captureName = uniqueFileIn(SAVE_DIR, path.basename(src));
+  const dest = path.join(SAVE_DIR, captureName);
+  try { fs.copyFileSync(src, dest); } catch { return null; }
+  entry.imported ||= {};
+  entry.imported[captureName] = path.basename(src);
+  saveProjectFolders(folders);
+  return { ...(await galleryPayload(dest)), time: captureTime(dest) };
+});
 
 function writeDataURLTemp(imageDataURL, ext = 'png') {
   const tmp = path.join(os.tmpdir(), `jqg-${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`);
@@ -248,7 +442,7 @@ function showAbout() {
 
 function createHUD() {
   hudWindow = new BrowserWindow({
-    width: 500, height: 90,
+    width: HUD_WIDTH, height: 90,
     x: 120, y: 80,
     frame: false, transparent: true,
     alwaysOnTop: true, resizable: false,
@@ -264,9 +458,11 @@ function createHUD() {
   hudWindow.setAlwaysOnTop(true, 'floating');
 
   // Auto-grant display media for screen recording from the HUD
-  hudWindow.webContents.session.setDisplayMediaRequestHandler(async (_request, callback) => {
+  hudWindow.webContents.session.setDisplayMediaRequestHandler(async (request, callback) => {
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
-    callback({ video: sources.find(s => String(s.display_id) === String(recordingDisplayId)) || sources[0] });
+    const video = sources.find(s => String(s.display_id) === String(recordingDisplayId)) || sources[0];
+    // System audio (HUD's 🔊 toggle): loopback captures what the Mac is playing (macOS 13+).
+    callback(request.audioRequested ? { video, audio: 'loopback' } : { video });
   });
 }
 
@@ -410,6 +606,8 @@ async function triggerCapture(mode) {
     if (mode === 'window') return await captureActiveWindow();
     return await openRegionOverlay();
   } catch {
+    streamMode = null;
+    restoreEditorAfterStream();
     showHUD();
   }
 }
@@ -614,14 +812,18 @@ function openEditor(imageDataURL, rect, savedFilePath) {
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 
 ipcMain.on('hud-capture', (_e, mode) => {
-  if (mode === 'record') { recordingMode = true; triggerCapture('region'); }
+  if (STREAM_MODES[mode]) {
+    streamMode = STREAM_MODES[mode];
+    hideEditorForStream();
+    triggerCapture('region');
+  }
   else triggerCapture(mode);
 });
 
 ipcMain.on('hud-set-collapsed', (_e, collapsed) => {
   if (!hudWindow || hudWindow.isDestroyed()) return;
   hudWindow.setResizable(true);
-  hudWindow.setSize(collapsed ? 70 : 500, collapsed ? 70 : 90, false);
+  hudWindow.setSize(collapsed ? 70 : HUD_WIDTH, collapsed ? 70 : 90, false);
   hudWindow.setResizable(false);
 });
 
@@ -647,9 +849,52 @@ ipcMain.handle('save-recording', async (_e, buffer, ext) => {
   return filePath;
 });
 
-ipcMain.on('recording-stopped', () => {
+// Live captures (record / GIF / scroll) grab the real screen. The overlay's app.focus()
+// activates the whole app, which would bring the editor to the front over whatever the user
+// is capturing, so it's hidden for the session and restored (without focus) afterwards.
+let editorHiddenForStream = false;
+
+function hideEditorForStream() {
+  if (!editorWin || editorWin.isDestroyed() || !editorWin.isVisible()) return;
+  editorWin.hide();
+  editorHiddenForStream = true;
+}
+
+function restoreEditorAfterStream() {
+  if (!editorHiddenForStream) return;
+  editorHiddenForStream = false;
+  if (editorWin && !editorWin.isDestroyed()) editorWin.showInactive();
+}
+
+function endStreamSession() {
   closeCaptureWin();
-  if (hudWindow && !hudWindow.isDestroyed()) hudWindow.setAlwaysOnTop(true, 'floating');
+  restoreEditorAfterStream();
+  if (!hudWindow || hudWindow.isDestroyed()) return;
+  hudWindow.setAlwaysOnTop(true, 'floating');
+  hudWindow.setContentProtection(false);
+}
+
+ipcMain.on('recording-stopped', endStreamSession);
+
+// HUD's 🎙 toggle: macOS asks the user once; afterwards the answer comes from System Settings.
+ipcMain.handle('mic-access', async () => {
+  if (process.platform !== 'darwin') return true;
+  const status = systemPreferences.getMediaAccessStatus('microphone');
+  if (status === 'granted') return true;
+  if (status === 'not-determined') return systemPreferences.askForMediaAccess('microphone');
+  return false;
+});
+
+ipcMain.on('open-mic-settings', () => {
+  if (process.platform === 'darwin') shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+  else if (process.platform === 'win32') shell.openExternal('ms-settings:privacy-microphone');
+});
+
+// Scrolling capture: the HUD stitches frames and sends back the tall image (or null if cancelled).
+ipcMain.on('scroll-capture-done', (_e, imageDataURL) => {
+  endStreamSession();
+  if (imageDataURL) finishCapture(imageDataURL);
+  else showHUD();
 });
 
 ipcMain.handle('shortcuts-get', () => ({
@@ -675,28 +920,34 @@ ipcMain.handle('shortcuts-set', (_e, shortcuts) => {
 });
 
 ipcMain.on('capture-done', (_e, { imageDataURL, rect }) => {
-  if (recordingMode) {
-    recordingMode = false;
-    if (rect) {
-      const display = regionDisplay || screen.getPrimaryDisplay();
-      recordingDisplayId = display.id;
-      const sf = display.scaleFactor || 1;
-      const logicalRect = {
-        x: Math.round(rect.x / sf), y: Math.round(rect.y / sf),
-        w: Math.round(rect.w / sf), h: Math.round(rect.h / sf),
-        displayW: display.bounds.width, displayH: display.bounds.height,
-      };
-      // Keep capture overlay as a recording indicator; exclude it from the recording
-      // and raise the HUD above it so the timer is visible
-      if (captureWin && !captureWin.isDestroyed()) {
-        captureWin.setContentProtection(true);
-        captureWin.setIgnoreMouseEvents(true, { forward: true });
-        captureWin.webContents.send('recording-start', logicalRect);
-      }
-      if (hudWindow && !hudWindow.isDestroyed()) {
-        hudWindow.setAlwaysOnTop(true, 'screen-saver');
-        hudWindow.webContents.send('recording-region', logicalRect);
-      }
+  if (streamMode) {
+    const kind = streamMode;
+    streamMode = null;
+    const display = regionDisplay || screen.getPrimaryDisplay();
+    recordingDisplayId = display.id;
+    const sf = display.scaleFactor || 1;
+    // No rect means the user picked the whole screen (Space) in the overlay.
+    const logicalRect = {
+      kind,
+      x: rect ? Math.round(rect.x / sf) : 0, y: rect ? Math.round(rect.y / sf) : 0,
+      w: rect ? Math.round(rect.w / sf) : display.bounds.width,
+      h: rect ? Math.round(rect.h / sf) : display.bounds.height,
+      displayW: display.bounds.width, displayH: display.bounds.height,
+    };
+    // Keep the overlay as the region indicator, but exclude it from the stream and let
+    // clicks/scrolls through (scroll mode needs the page underneath to scroll). Raise the
+    // HUD above it so its controls stay reachable.
+    if (captureWin && !captureWin.isDestroyed()) {
+      captureWin.setContentProtection(true);
+      captureWin.setIgnoreMouseEvents(true, { forward: true });
+      captureWin.webContents.send('recording-start', logicalRect);
+    }
+    if (hudWindow && !hudWindow.isDestroyed()) {
+      hudWindow.setAlwaysOnTop(true, 'screen-saver');
+      // Keep the HUD out of the stream too: it would show up in recordings and GIFs and
+      // break scroll stitching wherever it overlaps the region.
+      hudWindow.setContentProtection(true);
+      hudWindow.webContents.send('recording-region', logicalRect);
     }
     showHUD();
     return;
@@ -711,7 +962,8 @@ ipcMain.on('capture-done', (_e, { imageDataURL, rect }) => {
 
 ipcMain.on('capture-cancel', () => {
   closeCaptureWin();
-  recordingMode = false;
+  streamMode = null;
+  restoreEditorAfterStream();
   showHUD();
 });
 
@@ -802,7 +1054,7 @@ ipcMain.on('editor-close', () => {
 
 ipcMain.on('gallery-open-folder', () => shell.openPath(SAVE_DIR));
 ipcMain.on('gallery-reveal', (_e, filePath) => {
-  const safePath = safeCapturePath(filePath);
+  const safePath = safeCapturePath(filePath, { allowMedia: true, allowLinked: true });
   if (safePath && fs.existsSync(safePath)) shell.showItemInFolder(safePath);
 });
 
@@ -842,17 +1094,17 @@ const GALLERY_RECENT_LIMIT = 30;
 
 // `include` lists captures the renderer always needs regardless of age (pinned or
 // assigned to a project), since those live in renderer localStorage.
-ipcMain.handle('gallery-list', (_e, include = []) => {
+ipcMain.handle('gallery-list', async (_e, include = []) => {
   try {
     const all = fs.readdirSync(SAVE_DIR)
-      .filter(f => /\.(png|jpg|jpeg)$/i.test(f))
+      .filter(f => isImageFile(f) || MEDIA_EXT.test(f))
       .map(filename => path.join(SAVE_DIR, filename))
       .map(filePath => ({ filePath, time: captureTime(filePath) }))
       .sort((a, b) => b.time - a.time);
-    const wanted = new Set((Array.isArray(include) ? include : []).map(safeCapturePath).filter(Boolean));
-    return all
-      .filter((entry, i) => i < GALLERY_RECENT_LIMIT || wanted.has(entry.filePath))
-      .map(({ filePath, time }) => ({ ...galleryPayload(filePath), time }));
+    const wanted = new Set((Array.isArray(include) ? include : [])
+      .map(p => safeCapturePath(p, { allowMedia: true })).filter(Boolean));
+    const shown = all.filter((entry, i) => i < GALLERY_RECENT_LIMIT || wanted.has(entry.filePath));
+    return Promise.all(shown.map(async ({ filePath, time }) => ({ ...(await galleryPayload(filePath)), time })));
   } catch { return []; }
 });
 
@@ -875,27 +1127,37 @@ ipcMain.handle('gallery-load', (_e, filePath) => {
 
 ipcMain.handle('gallery-delete', async (_e, filePath) => {
   try {
-    const safePath = safeCapturePath(filePath);
+    const safePath = safeCapturePath(filePath, { allowMedia: true });
     if (!safePath || !fs.existsSync(safePath)) return { success: false };
     try { await shell.trashItem(safePath); } catch { fs.unlinkSync(safePath); }
-    [annotationPathFor(safePath), flatAnnotationPathFor(safePath), legacyAnnotationPathFor(safePath)].forEach(p => {
-      try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
-    });
+    if (MEDIA_EXT.test(safePath)) {
+      try { fs.unlinkSync(videoSessionPathFor(safePath)); } catch {}
+    }
+    // Annotation sidecars only exist for screenshots (for media the "legacy" path is the file itself).
+    if (isImageFile(safePath)) {
+      [annotationPathFor(safePath), flatAnnotationPathFor(safePath), legacyAnnotationPathFor(safePath)].forEach(p => {
+        try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch {}
+      });
+    }
     return { success: true };
   } catch { return { success: false }; }
 });
 
-ipcMain.handle('gallery-rename', (_e, { filePath, name }) => {
+ipcMain.handle('gallery-rename', async (_e, { filePath, name }) => {
   try {
-    const safePath = safeCapturePath(filePath);
+    const safePath = safeCapturePath(filePath, { allowMedia: true });
     if (!safePath || !fs.existsSync(safePath)) return { success: false, reason: 'missing' };
     const ext = path.extname(safePath);
     const filename = safeCaptureName(name, ext);
     const nextPath = path.join(SAVE_DIR, filename);
     if (nextPath !== safePath && fs.existsSync(nextPath)) return { success: false, reason: 'exists' };
 
-    if (nextPath !== safePath) {
-      fs.renameSync(safePath, nextPath);
+    if (nextPath !== safePath) fs.renameSync(safePath, nextPath);
+    if (nextPath !== safePath && MEDIA_EXT.test(safePath) && fs.existsSync(videoSessionPathFor(safePath))) {
+      fs.renameSync(videoSessionPathFor(safePath), videoSessionPathFor(nextPath));
+    }
+    // Move annotation sidecars too (screenshots only; media has none).
+    if (nextPath !== safePath && isImageFile(safePath)) {
       const oldAnn = annotationPathFor(safePath);
       const newAnn = annotationPathFor(nextPath);
       const oldFlat = flatAnnotationPathFor(safePath);
@@ -905,8 +1167,108 @@ ipcMain.handle('gallery-rename', (_e, { filePath, name }) => {
       else if (fs.existsSync(oldLegacy)) fs.renameSync(oldLegacy, newAnn);
       if (fs.existsSync(oldFlat)) fs.renameSync(oldFlat, newFlat);
     }
-    return { success: true, item: galleryPayload(nextPath) };
+    return { success: true, item: await galleryPayload(nextPath) };
   } catch { return { success: false }; }
+});
+
+// ── Media editing ─────────────────────────────────────────────────────────────
+
+// GIF editing decodes the file in the renderer, which can't fetch file:// URLs.
+const MEDIA_READ_LIMIT = 200 * 1024 * 1024;
+ipcMain.handle('media-read', (_e, filePath) => {
+  const safePath = safeCapturePath(filePath, { allowMedia: true, allowLinked: true });
+  if (!safePath || !MEDIA_EXT.test(safePath) || !fs.existsSync(safePath)) return null;
+  if (fs.statSync(safePath).size > MEDIA_READ_LIMIT) return null;
+  return fs.readFileSync(safePath);
+});
+
+// Edits never overwrite the original: save next to it as "<name>-edited.<ext>" (then -2, -3…).
+ipcMain.handle('save-media-edit', async (_e, { bytes, ext, sourcePath }) => {
+  try {
+    if (!MEDIA_EXT.test(`.${ext}`)) return { success: false };
+    const source = safeCapturePath(sourcePath, { allowMedia: true, allowLinked: true });
+    const base = source ? path.basename(source).replace(/\.[^.]+$/, '') : `edit-${Date.now()}`;
+    let filePath = path.join(SAVE_DIR, `${base}-edited.${ext}`);
+    for (let n = 2; fs.existsSync(filePath); n++) filePath = path.join(SAVE_DIR, `${base}-edited-${n}.${ext}`);
+    fs.writeFileSync(filePath, Buffer.from(bytes));
+    return { success: true, item: { ...(await galleryPayload(filePath)), time: captureTime(filePath) } };
+  } catch { return { success: false }; }
+});
+
+// Video edit sessions (clips + trims, crop, annotations) auto-save next to the video, like
+// screenshot annotations, and are restored the next time it's edited.
+function videoSessionPathFor(filePath) {
+  const resolved = path.resolve(filePath);
+  if (resolved.startsWith(path.resolve(SAVE_DIR) + path.sep)) return path.join(ANNOTATION_DIR, `${path.basename(resolved)}.video.json`);
+  const key = crypto.createHash('sha1').update(resolved).digest('hex').slice(0, 12);
+  return path.join(ANNOTATION_DIR, `linked-${key}-${path.basename(resolved)}.video.json`);
+}
+
+const safeMediaPath = filePath => {
+  const p = safeCapturePath(filePath, { allowMedia: true, allowLinked: true });
+  return p && MEDIA_EXT.test(p) ? p : null;
+};
+
+ipcMain.handle('video-session-load', (_e, filePath) => {
+  const safePath = safeMediaPath(filePath);
+  if (!safePath) return null;
+  let session;
+  try { session = JSON.parse(fs.readFileSync(videoSessionPathFor(safePath), 'utf8')); } catch { return null; }
+  // Clips are stored by name; resolve them in the captures folder and skip any that are gone.
+  const clips = [];
+  let missing = 0;
+  for (const c of Array.isArray(session.clips) ? session.clips : []) {
+    const p = (c?.path && safeMediaPath(c.path)) || safeMediaPath(path.join(SAVE_DIR, path.basename(String(c?.name || ''))));
+    if (!p || !fs.existsSync(p)) { missing++; continue; }
+    clips.push({
+      item: { filename: path.basename(p), filePath: p, fileURL: pathToFileURL(p).href, kind: mediaKind(p) },
+      start: +c.start || 0, end: c.end == null ? null : +c.end,
+    });
+  }
+  return { clips, missing, W: session.W, H: session.H, crop: session.crop || null, anns: Array.isArray(session.anns) ? session.anns : [] };
+});
+
+ipcMain.handle('video-session-save', (_e, { filePath, session }) => {
+  const safePath = safeMediaPath(filePath);
+  if (!safePath || !session || typeof session !== 'object') return false;
+  try {
+    fs.mkdirSync(ANNOTATION_DIR, { recursive: true });
+    fs.writeFileSync(videoSessionPathFor(safePath), JSON.stringify(session));
+    return true;
+  } catch { return false; }
+});
+
+// Clip finder: every GIF/recording in the captures folder (the gallery only lists recent
+// captures). Thumbnails are fetched separately, as cards scroll into view.
+ipcMain.handle('media-list', () => {
+  const asItem = (f, extra = {}) => ({ ...f, fileURL: pathToFileURL(f.filePath).href, kind: mediaKind(f.filePath), ...extra });
+  let items = [];
+  try {
+    items = fs.readdirSync(SAVE_DIR)
+      .filter(f => MEDIA_EXT.test(f))
+      .map(filename => {
+        const filePath = path.join(SAVE_DIR, filename);
+        const stat = fs.statSync(filePath);
+        return asItem({ filename, filePath, time: stat.birthtimeMs || stat.mtimeMs, size: stat.size });
+      });
+  } catch {}
+  for (const [projectId, entry] of Object.entries(projectFolders())) {
+    try {
+      listFolderFiles(entry).filter(f => MEDIA_EXT.test(f.filename))
+        .forEach(f => items.push(asItem(f, { external: true, projectId })));
+    } catch {}
+  }
+  return items.sort((a, b) => b.time - a.time);
+});
+
+ipcMain.handle('media-thumb', (_e, filePath) => {
+  const safePath = safeMediaPath(filePath);
+  return safePath ? mediaThumb(safePath) : null;
+});
+
+// "Frame → screenshot": treat the grabbed frame like a fresh capture (auto-save + editor).
+ipcMain.on('save-frame-capture', (_e, imageDataURL) => {
+  if (typeof imageDataURL === 'string' && imageDataURL.startsWith('data:image/')) finishCapture(imageDataURL);
 });
 
 ipcMain.handle('image-load-file', (_e, filePath) => {
@@ -949,9 +1311,12 @@ ipcMain.handle('annotation-save-now', (_e, data) => {
 
 ipcMain.on('ondragstart', (event, filePath) => {
   try {
-    const safePath = safeCapturePath(filePath);
+    const safePath = safeCapturePath(filePath, { allowMedia: true, allowLinked: true });
     if (!safePath) return;
-    const icon = nativeImage.createFromPath(safePath).resize({ width: 64, height: 64 });
+    // Videos have no image to use as the drag icon, and startDrag rejects an empty one.
+    let icon = nativeImage.createFromPath(safePath);
+    if (icon.isEmpty()) icon = nativeImage.createFromPath(path.join(__dirname, 'picker-hud.png'));
+    icon = icon.resize({ width: 64, height: 64 });
     event.sender.startDrag({ file: safePath, icon });
   } catch {}
 });
@@ -1004,6 +1369,7 @@ app.whenReady().then(() => {
   fs.mkdirSync(ANNOTATION_DIR, { recursive: true });
   migrateLegacyAnnotations();
   cleanupTempExports();
+  startProjectFolders();
   if (!showFirstRunOnboarding()) maybeShowScreenPermissionHelp();
   if (process.platform === 'darwin') app.dock.hide();
   app.setAboutPanelOptions({

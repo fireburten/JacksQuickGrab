@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onRecordingRegion:  (cb)  => ipcRenderer.on('recording-region', (_e, data) => cb(data)),
   onRecordingStart:   (cb)  => ipcRenderer.on('recording-start',  (_e, data) => cb(data)),
   recordingStopped:   ()    => ipcRenderer.send('recording-stopped'),
+  micAccess:          ()    => ipcRenderer.invoke('mic-access'),
+  openMicSettings:    ()    => ipcRenderer.send('open-mic-settings'),
+  scrollCaptureDone:  (dataURL) => ipcRenderer.send('scroll-capture-done', dataURL),
 
   // Capture overlay → Main
   captureDone: (data) => ipcRenderer.send('capture-done', data),
@@ -52,6 +55,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   galleryRename:     (data)     => ipcRenderer.invoke('gallery-rename', data),
   galleryReveal:     (filePath) => ipcRenderer.send('gallery-reveal', filePath),
   galleryOpenFolder: ()         => ipcRenderer.send('gallery-open-folder'),
+
+  // Media editing
+  mediaRead:         (filePath) => ipcRenderer.invoke('media-read', filePath),
+  saveMediaEdit:     (data)     => ipcRenderer.invoke('save-media-edit', data),
+  saveFrameCapture:  (dataURL)  => ipcRenderer.send('save-frame-capture', dataURL),
+  videoSessionLoad:  (filePath) => ipcRenderer.invoke('video-session-load', filePath),
+  videoSessionSave:  (data)     => ipcRenderer.invoke('video-session-save', data),
+  mediaList:         ()         => ipcRenderer.invoke('media-list'),
+  mediaThumb:        (filePath) => ipcRenderer.invoke('media-thumb', filePath),
+
+  // Project folders
+  projectFolders:      ()     => ipcRenderer.invoke('project-folders'),
+  projectFolderLink:   (id)   => ipcRenderer.invoke('project-folder-link', id),
+  projectFolderUnlink: (id)   => ipcRenderer.invoke('project-folder-unlink', id),
+  projectFolderReveal: (id)   => ipcRenderer.send('project-folder-reveal', id),
+  projectFolderList:   (id)   => ipcRenderer.invoke('project-folder-list', id),
+  projectFolderExport: (data) => ipcRenderer.invoke('project-folder-export', data),
+  projectFolderImport: (data) => ipcRenderer.invoke('project-folder-import', data),
+  onProjectFolderChanged: (cb) => ipcRenderer.on('project-folder-changed', (_e, id) => cb(id)),
   startDrag:          (filePath)  => ipcRenderer.send('ondragstart', filePath),
   startDragComposite: (data)      => ipcRenderer.send('ondragstart-composite', data),
   startDragAnnotated: (filePath)  => ipcRenderer.send('ondragstart-annotated', filePath),

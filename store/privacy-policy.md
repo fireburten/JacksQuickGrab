@@ -20,6 +20,7 @@ We can't see your screenshots, recordings, text, or settings, and we never recei
 - **Captures and recordings** are saved as regular image and video files in your **Pictures ▸ Jack's Picker** folder.
 - **Annotations** (arrows, text, blur, and so on) are saved in a hidden `.annotations` folder inside that folder, so you can edit your markups later.
 - **Settings** such as your hotkeys, auto-copy choice, pinned captures, projects, and editor preferences are stored in the app's private container on your Mac.
+- **Linked folders:** if you link a project to a folder you choose, the app copies captures you add to that project into it and lists the images and videos already there. It only reads that folder and adds its own copies; it never renames, moves, or deletes your files there. Unlinking leaves the folder as it is.
 - **Temporary copies:** when you share a capture or drag it into another app, a copy is written to the app's temporary folder so the receiving app can read it. These copies are deleted automatically after a day.
 
 This data stays on your device. It doesn't leave your Mac unless you send it somewhere yourself, for example by copying, dragging, saving, or using the Share button (AirDrop, Mail, Messages, and so on). Anything you share is handled by the app or service you choose. If you use iCloud Drive, Time Machine, or another backup or sync service, those files may be included in it under that service's own terms.
@@ -27,6 +28,10 @@ This data stays on your device. It doesn't leave your Mac unless you send it som
 ## Screen Recording permission
 
 To take screenshots and screen recordings, macOS requires you to give Jack's Picker **Screen Recording** permission. The app only reads your screen when you start a capture or recording. You can turn this permission off at any time in **System Settings ▸ Privacy & Security ▸ Screen & System Audio Recording**.
+
+## Sound and microphone
+
+Screen recordings can include sound, but only if you turn it on with the 🔊 (your Mac's sound) or 🎙 (microphone) buttons next to Record. Both are off until you switch them on. The first time you turn on the microphone, macOS asks for your permission; you can change it any time in **System Settings ▸ Privacy & Security ▸ Microphone**. Sound is captured only while a recording is running and is saved only inside that recording file on your Mac. GIFs and screenshots never include sound.
 
 ## Text recognition (OCR)
 

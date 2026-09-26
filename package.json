@@ -30,6 +30,7 @@
       "picker-hud.png",
       "bin/**/*",
       "scripts/**/*",
+      "!scripts/test-*",
       "src/**/*"
     ],
     "asarUnpack": [
@@ -42,7 +43,8 @@
       "extendInfo": {
         "NSScreenCaptureUsageDescription": "Jack's Picker captures your screen when you take a screenshot or recording.",
         "LSUIElement": true,
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Jack's Picker records your microphone only when you turn on 🎙 for a screen recording."
       },
       "x64ArchFiles": "Contents/Resources/app.asar.unpacked/bin/*"
     },
