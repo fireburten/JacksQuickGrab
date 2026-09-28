@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
@@ -12,19 +14,20 @@ canvas { position: absolute; inset: 0; display: block; cursor: crosshair; }
   bottom: 22px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(27,19,53,.92);
-  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(var(--bg-float-rgb),.92);
+  border: 1px solid rgba(var(--ink),calc(.1 * var(--line-boost)));
   border-radius: 10px;
   padding: 8px 18px;
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
-  color: rgba(255,255,255,.6);
+  color: rgba(var(--ink),calc(.6 + .24 * var(--text-boost) + .4 * var(--text-lift)));
   white-space: nowrap;
   pointer-events: none;
   z-index: 10;
   letter-spacing: .01em;
 }
 kbd { color: #E9E7FB; font-family: inherit; }
+:root[data-theme="light"] kbd { color: var(--fg); }
 </style>
 </head>
 <body>
@@ -36,8 +39,15 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const hint = document.getElementById('hint');
 
-const PURPLE    = '#6C4EF6';
-const PURPLE35  = 'rgba(108,78,246,.35)';
+// Selection colours follow the theme's accent (theme.js fires 'jp-appearance' on changes).
+let PURPLE = '#6C4EF6', PURPLE35 = 'rgba(108,78,246,.35)';
+function readAccent() {
+  const rgb = getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb').trim() || '108,78,246';
+  PURPLE = `rgb(${rgb})`;
+  PURPLE35 = `rgba(${rgb},.35)`;
+}
+readAccent();
+window.addEventListener('jp-appearance', readAccent);
 const DARK      = 'rgba(14,10,31,.52)';
 
 let bgImage = null;

@@ -2,36 +2,38 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
 <link rel="stylesheet" href="fonts/poppins.css">
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
-  min-height: 100%; background:#0e0a1f; color:#fff;
+  min-height: 100%; background:var(--bg-app); color:var(--fg);
   font-family:Poppins,system-ui,-apple-system,sans-serif; overflow:hidden;
 }
 .titlebar { height:30px; -webkit-app-region:drag; }
 .wrap { padding: 10px 14px 16px; }
 .head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
-h1 { font-size:14px; font-weight:700; color:rgba(255,255,255,.82); }
+h1 { font-size:14px; font-weight:700; color:rgba(var(--ink),calc(.82 + .1476 * var(--text-boost) + .18 * var(--text-lift))); }
 button {
-  border:0; border-radius:7px; background:rgba(255,255,255,.07);
-  color:rgba(255,255,255,.65); padding:7px 11px; font:600 11px inherit;
+  border:0; border-radius:7px; background:rgba(var(--ink),calc(.07 * var(--ink-boost)));
+  color:rgba(var(--ink),calc(.65 + .2275 * var(--text-boost) + .35 * var(--text-lift))); padding:7px 11px; font:600 11px inherit;
   cursor:pointer; -webkit-app-region:no-drag;
 }
-button:hover { background:rgba(108,78,246,.26); color:#fff; }
+button:hover { background:rgba(var(--accent-rgb),calc(.26 * var(--ink-boost))); color:var(--fg); }
 .grid {
   display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
   max-height:520px; overflow:auto; padding-right:2px;
 }
 .card {
-  border:2px solid rgba(255,255,255,.07); border-radius:8px; overflow:hidden;
-  background:rgba(255,255,255,.04); cursor:pointer; -webkit-app-region:no-drag;
+  border:2px solid rgba(var(--ink),calc(.07 * var(--line-boost))); border-radius:8px; overflow:hidden;
+  background:rgba(var(--ink),calc(.04 * var(--ink-boost))); cursor:pointer; -webkit-app-region:no-drag;
 }
-.card:hover { border-color:#6C4EF6; background:rgba(108,78,246,.12); }
-.thumb { width:100%; aspect-ratio:16/10; object-fit:cover; display:block; background:#060412; }
+.card:hover { border-color:var(--accent); background:rgba(var(--accent-rgb),calc(.12 * var(--ink-boost))); }
+.thumb { width:100%; aspect-ratio:16/10; object-fit:cover; display:block; background:var(--bg-sidebar); }
 .name {
-  padding:7px 8px; font-size:10px; color:rgba(255,255,255,.58);
+  padding:7px 8px; font-size:10px; color:rgba(var(--ink),calc(.58 + .2436 * var(--text-boost) + .42 * var(--text-lift)));
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 </style>

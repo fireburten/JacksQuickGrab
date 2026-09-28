@@ -10,12 +10,18 @@
     "start": "unset ELECTRON_RUN_AS_NODE && electron .",
     "build": "npm run build:ocr && electron-builder",
     "build:dir": "npm run build:ocr && electron-builder --dir",
-    "build:mas": "npm run build:ocr && electron-builder --mac mas --universal",
+    "prebuild:mas": "node scripts/check-release.cjs mas",
+    "build:mas": "npm run build:ocr && electron-builder --mac mas --universal -c.buildVersion=$(git rev-list --count HEAD)",
+    "prebuild:mas-dev": "node scripts/check-release.cjs mas-dev",
     "build:mas-dev": "npm run build:ocr && electron-builder --mac mas-dev --universal",
     "open:dist": "unset ELECTRON_RUN_AS_NODE && open -n \"$PWD/dist/mac-arm64/Jack's Picker.app\"",
-    "rebuild:open": "npm run build:dir && npm run open:dist"
+    "rebuild:open": "npm run build:dir && npm run open:dist",
+    "check:release": "node scripts/check-release.cjs",
+    "build:privacy": "node scripts/build-privacy-page.mjs",
+    "test": "node scripts/test-main-process.cjs && node scripts/test-scroll-stitch.cjs && unset ELECTRON_RUN_AS_NODE && electron scripts/test-settings-ui.cjs && electron scripts/test-media-editor.cjs && electron scripts/test-theme.cjs"
   },
   "devDependencies": {
+    "@electron/fuses": "^1.8.0",
     "electron": "^41.3.0",
     "electron-builder": "^25.0.0"
   },
@@ -29,17 +35,20 @@
       "picker-icon.png",
       "picker-hud.png",
       "bin/**/*",
-      "scripts/**/*",
-      "!scripts/test-*",
+      "scripts/ocr-table.ps1",
       "src/**/*"
     ],
     "asarUnpack": [
       "bin/**/*",
-      "scripts/**/*"
+      "scripts/ocr-table.ps1"
     ],
+    "afterPack": "scripts/after-pack.cjs",
     "mac": {
       "category": "public.app-category.graphics-design",
       "icon": "build/icon.png",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
         "NSScreenCaptureUsageDescription": "Jack's Picker captures your screen when you take a screenshot or recording.",
         "LSUIElement": true,

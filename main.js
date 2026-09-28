@@ -1,7 +1,7 @@
 const {
   app, BrowserWindow, Tray, Menu, globalShortcut,
   ipcMain, screen, clipboard, nativeImage, dialog, shell,
-  desktopCapturer, systemPreferences, ShareMenu,
+  desktopCapturer, systemPreferences, ShareMenu, nativeTheme,
 } = require('electron');
 const path    = require('path');
 const fs      = require('fs');
@@ -9,6 +9,61 @@ const os      = require('os');
 const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const crypto = require('crypto');
+
+// Packaged builds refuse remote debugging: another program could start the app with it and drive
+// it, along with its Screen Recording and Microphone access. (--inspect and ELECTRON_RUN_AS_NODE
+// are switched off by Electron fuses, see scripts/after-pack.cjs.)
+if (app.isPackaged && ['remote-debugging-port', 'remote-debugging-pipe'].some(s => app.commandLine.hasSwitch(s))) {
+  process.exit(1);
+}
+
+// ── Error log ─────────────────────────────────────────────────────────────────
+// Problems go to a small local log (~/Library/Logs/Jack's Picker/main.log, inside the app's
+// container in the App Store build) instead of Electron's raw error dialog. Nothing is sent
+// anywhere; Settings → Storage → Diagnostic log shows it.
+const LOG_MAX_BYTES = 1024 * 1024;
+let lastProblemDialogAt = 0;
+
+function logPath() {
+  return path.join(app.getPath('logs'), 'main.log');
+}
+
+function logError(where, err) {
+  const line = `[${new Date().toISOString()}] ${where}: ${err?.stack || err}\n`;
+  console.error(line.trimEnd());
+  try {
+    const file = logPath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // One backup (main.log.1) keeps it small.
+    if (fs.existsSync(file) && fs.statSync(file).size > LOG_MAX_BYTES) fs.renameSync(file, `${file}.1`);
+    fs.appendFileSync(file, line);
+  } catch {}
+}
+
+// An unexpected error in the main process: log it and say so (at most every 30 s). The
+// menu-bar app keeps running.
+function reportProblem(where, err) {
+  logError(where, err);
+  if (!app.isReady() || Date.now() - lastProblemDialogAt < 30_000) return;
+  lastProblemDialogAt = Date.now();
+  dialog.showMessageBox({
+    type: 'error',
+    message: "Jack's Picker ran into a problem",
+    detail: 'The details were saved to its log. If this keeps happening, quit and reopen the app.',
+    buttons: ['OK', 'Show Log'],
+    defaultId: 0,
+  }).then(({ response }) => { if (response === 1) showLog(); }).catch(() => {});
+}
+
+function showLog() {
+  const file = logPath();
+  if (fs.existsSync(file)) { shell.showItemInFolder(file); return; }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  shell.openPath(path.dirname(file));
+}
+
+process.on('uncaughtException', err => reportProblem('Uncaught exception', err));
+process.on('unhandledRejection', reason => logError('Unhandled rejection', reason));
 
 let hudWindow  = null;
 let captureWin = null;
@@ -27,11 +82,17 @@ let streamMode     = null;
 const IS_MAS = !!process.mas;
 // The App Store sandbox points os.homedir() at the app container, so MAS builds
 // save to the real ~/Pictures (granted by the assets.pictures entitlement).
-const SAVE_DIR = IS_MAS
+const DEFAULT_SAVE_DIR = IS_MAS
   ? path.join(os.userInfo().homedir, 'Pictures', "Jack's Picker")
   : path.join(os.homedir(), 'Documents', "Jack's Picker");
 const LEGACY_SAVE_DIR = path.join(os.homedir(), 'Documents', "Jack's Quick Grab");
-const ANNOTATION_DIR = path.join(SAVE_DIR, '.annotations');
+// The captures folder can be changed in Settings; everything reads these at call time.
+let SAVE_DIR = DEFAULT_SAVE_DIR;
+let ANNOTATION_DIR = path.join(SAVE_DIR, '.annotations');
+function setSaveDir(dir) {
+  SAVE_DIR = dir;
+  ANNOTATION_DIR = path.join(dir, '.annotations');
+}
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
 const DEFAULT_SHORTCUTS = {
   region: 'CommandOrControl+Shift+2',
@@ -39,14 +100,13 @@ const DEFAULT_SHORTCUTS = {
   window: 'CommandOrControl+Alt+Shift+W',
   full: 'CommandOrControl+Shift+1',
 };
-// macOS owns ⌘⇧3 / ⌘⇧4 / ⌘⇧5 for its own screenshot tools.
-const MACOS_RESERVED_SHORTCUTS = new Set([
-  'CommandOrControl+Shift+3',
-  'CommandOrControl+Shift+4',
-  'CommandOrControl+Shift+5',
-]);
+// ⌘⇧3 / ⌘⇧4 / ⌘⇧5 are allowed too: they're macOS's screenshot keys, and macOS takes them first
+// until they're turned off in System Settings (the hotkey dialog explains and links there).
 const RECORDING_EXTS = new Set(['mp4', 'webm', 'gif']);
 const HUD_WIDTH = 530;
+const HUD_HEIGHT = 90;
+const HUD_COLLAPSED = 70;
+let hudCollapsed = false;
 const STREAM_MODES = { record: 'video', gif: 'gif', scroll: 'scroll' };
 
 function readSettings() {
@@ -62,14 +122,219 @@ function writeSettings(next) {
 }
 
 function readShortcuts() {
-  const shortcuts = { ...DEFAULT_SHORTCUTS, ...(readSettings().shortcuts || {}) };
-  if (process.platform === 'darwin') {
-    Object.keys(shortcuts).forEach(kind => {
-      if (MACOS_RESERVED_SHORTCUTS.has(shortcuts[kind])) shortcuts[kind] = DEFAULT_SHORTCUTS[kind];
-    });
-  }
-  return shortcuts;
+  return { ...DEFAULT_SHORTCUTS, ...(readSettings().shortcuts || {}) };
 }
+
+// ── App settings (the editor's Settings panel) ────────────────────────────────
+// Kept in settings.json alongside hotkeys and project folders. appSettings() always returns a
+// complete, validated object, so an old or hand-edited file can't break a window; changes go
+// through updateSettings(), which applies them and tells every window.
+const THEMES = ['system', 'dark', 'light'];
+const ACCENTS = ['purple', 'blue', 'teal', 'green', 'orange', 'pink'];
+const UI_SCALES = [0.9, 1, 1.1, 1.25];
+const HUD_SCALES = [0.85, 1, 1.2];
+const THUMB_SIZES = ['small', 'medium', 'large'];
+const GIF_FPS_OPTIONS = [10, 12, 15, 20];
+const GIF_WIDTH_OPTIONS = [480, 640, 800, 1200];
+const oneOf = (value, options, fallback) => (options.includes(value) ? value : fallback);
+const clampNumber = (value, min, max, fallback) => (Number.isFinite(+value) && value !== null && value !== '' ? Math.min(max, Math.max(min, +value)) : fallback);
+const plainObject = value => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+
+function cleanPrefs(raw) {
+  const a = plainObject(raw.appearance), e = plainObject(raw.editor), r = plainObject(raw.recording);
+  return {
+    appearance: {
+      theme: oneOf(a.theme, THEMES, 'dark'),
+      accent: oneOf(a.accent, ACCENTS, 'purple'),
+      highContrast: !!a.highContrast,
+      uiScale: oneOf(a.uiScale, UI_SCALES, 1),
+      hudScale: oneOf(a.hudScale, HUD_SCALES, 1),
+      thumbSize: oneOf(a.thumbSize, THUMB_SIZES, 'large'),
+    },
+    editor: {
+      color: /^#[0-9a-f]{6}$/i.test(e.color) ? e.color.toUpperCase() : '#6C4EF6',
+      stroke: clampNumber(e.stroke, 1, 150, 15),
+      // 0 = automatic (the editor's default scales text with the stroke width)
+      textSize: e.textSize === 0 || e.textSize == null ? 0 : clampNumber(e.textSize, 8, 220, 0),
+    },
+    recording: {
+      systemAudio: !!r.systemAudio,
+      mic: !!r.mic,
+      gifFps: oneOf(r.gifFps, GIF_FPS_OPTIONS, 12),
+      gifWidth: oneOf(r.gifWidth, GIF_WIDTH_OPTIONS, 800),
+    },
+    autoCopyAfterCapture: !!raw.autoCopyAfterCapture,
+  };
+}
+
+function appSettings() {
+  return {
+    ...cleanPrefs(readSettings()),
+    launchAtLogin: app.isPackaged && app.getLoginItemSettings().openAtLogin,
+    launchAtLoginAvailable: app.isPackaged,   // a dev build would register the bare Electron binary
+    capturesFolder: { path: SAVE_DIR, isDefault: SAVE_DIR === DEFAULT_SAVE_DIR, defaultPath: DEFAULT_SAVE_DIR },
+  };
+}
+
+function broadcastSettings(settings = appSettings()) {
+  BrowserWindow.getAllWindows().forEach(w => { if (!w.isDestroyed()) w.webContents.send('settings-changed', settings); });
+  return settings;
+}
+
+function updateSettings(patch = {}) {
+  patch = plainObject(patch);
+  const raw = readSettings();
+  writeSettings(cleanPrefs({
+    ...raw,
+    appearance: { ...plainObject(raw.appearance), ...plainObject(patch.appearance) },
+    editor: { ...plainObject(raw.editor), ...plainObject(patch.editor) },
+    recording: { ...plainObject(raw.recording), ...plainObject(patch.recording) },
+    autoCopyAfterCapture: 'autoCopyAfterCapture' in patch ? patch.autoCopyAfterCapture : raw.autoCopyAfterCapture,
+  }));
+  if ('launchAtLogin' in patch && app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!patch.launchAtLogin });
+  const settings = appSettings();
+  applyAppearance(settings);
+  return broadcastSettings(settings);
+}
+
+// Native pieces (dialogs, menus, scrollbars, colour pickers) follow the app's theme; the
+// editor and HUD scale with their own window zoom (file:// pages zoom independently).
+function applyAppearance({ appearance }) {
+  nativeTheme.themeSource = appearance.theme;
+  if (editorWin && !editorWin.isDestroyed()) {
+    editorWin.webContents.setZoomFactor(appearance.uiScale);
+    editorWin.setBackgroundColor(windowBackground());
+  }
+  sizeHUD();
+}
+
+// Shown before a window's page paints (matches --bg-app in theme.css), so it doesn't flash white.
+function windowBackground() {
+  const { theme } = appSettings().appearance;
+  const dark = theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors);
+  return dark ? '#221f32' : '#f0eff5';
+}
+
+ipcMain.handle('settings-get', () => appSettings());
+ipcMain.handle('settings-set', (_e, patch) => updateSettings(patch));
+ipcMain.on('settings-open', () => openSettings());
+
+// `section` must stay a plain string: whatever is passed here is sent to the editor, and
+// an object that can't be serialized (e.g. a MenuItem) is dropped without an error.
+function openSettings(section = null) {
+  if (typeof section !== 'string') section = null;
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  if (editorWin && !editorWin.isDestroyed()) {
+    editorWin.show();
+    editorWin.focus();
+    editorWin.webContents.send('open-settings', section);
+    return;
+  }
+  createEditorWindow();
+  editorWin.webContents.once('did-finish-load', () => editorWin.webContents.send('open-settings', section));
+}
+
+// ── Captures folder ──
+// Changing it can move the existing captures (and their .annotations sidecars) along; a
+// capture whose name is already taken in the new folder stays where it is. The App Store
+// build keeps access to a chosen folder with a security-scoped bookmark.
+let saveDirAccessStop = null;
+let pendingSaveDir = null;
+
+function restoreCapturesFolder() {
+  const { saveDir, saveDirBookmark } = readSettings();
+  if (!saveDir) return;
+  if (IS_MAS && saveDirBookmark) {
+    try { saveDirAccessStop = app.startAccessingSecurityScopedResource(saveDirBookmark); } catch {}
+  }
+  // A folder on an unplugged drive: use the default until it's back (the setting is kept).
+  if (fs.existsSync(saveDir)) setSaveDir(saveDir);
+}
+
+const isCaptureFile = f => !f.startsWith('.') && (isImageFile(f) || MEDIA_EXT.test(f));
+
+function sidecarNamesFor(name) {
+  const ext = path.extname(name);
+  return [name.slice(0, -ext.length) + '.json', name.slice(0, -ext.length) + '.flat.png', `${name}.video.json`];
+}
+
+function moveFile(from, to) {
+  try { fs.renameSync(from, to); }
+  catch (err) {
+    if (err.code !== 'EXDEV') throw err;   // different volume: copy, then remove the original
+    fs.copyFileSync(from, to);
+    fs.unlinkSync(from);
+  }
+}
+
+function moveCaptures(fromDir, toDir) {
+  const fromAnn = path.join(fromDir, '.annotations'), toAnn = path.join(toDir, '.annotations');
+  fs.mkdirSync(toAnn, { recursive: true });
+  const moved = [], skipped = [];
+  for (const name of fs.readdirSync(fromDir).filter(isCaptureFile)) {
+    if (fs.existsSync(path.join(toDir, name))) { skipped.push(name); continue; }
+    try {
+      moveFile(path.join(fromDir, name), path.join(toDir, name));
+      moved.push({ from: path.join(fromDir, name), to: path.join(toDir, name) });
+      for (const side of sidecarNamesFor(name)) {
+        if (fs.existsSync(path.join(fromAnn, side)) && !fs.existsSync(path.join(toAnn, side))) moveFile(path.join(fromAnn, side), path.join(toAnn, side));
+      }
+    } catch { skipped.push(name); }
+  }
+  // Sessions for linked-folder videos aren't tied to a capture; they travel with the rest.
+  try {
+    fs.readdirSync(fromAnn).filter(f => f.startsWith('linked-') && !fs.existsSync(path.join(toAnn, f)))
+      .forEach(f => moveFile(path.join(fromAnn, f), path.join(toAnn, f)));
+  } catch {}
+  return { moved, skipped };
+}
+
+ipcMain.handle('captures-folder-choose', async () => {
+  const { canceled, filePaths, bookmarks } = await dialog.showOpenDialog(editorWin, {
+    title: 'Choose where captures are saved',
+    buttonLabel: 'Use This Folder',
+    properties: ['openDirectory', 'createDirectory'],
+    securityScopedBookmarks: IS_MAS,
+  });
+  if (canceled || !filePaths?.[0]) return null;
+  const dir = path.resolve(filePaths[0]);
+  if (dir === path.resolve(SAVE_DIR)) return null;
+  if (dir.startsWith(path.resolve(SAVE_DIR) + path.sep)) return { error: 'inside' };
+  pendingSaveDir = { dir, bookmark: bookmarks?.[0] || null };
+  let count = 0;
+  try { count = fs.readdirSync(SAVE_DIR).filter(isCaptureFile).length; } catch {}
+  return { path: dir, count };
+});
+
+// target: 'pending' (the folder just chosen) or 'default'; move: bring existing captures along.
+ipcMain.handle('captures-folder-apply', (_e, { target, move }) => {
+  const next = target === 'default' ? { dir: DEFAULT_SAVE_DIR, bookmark: null } : pendingSaveDir;
+  pendingSaveDir = null;
+  if (!next) return null;
+  const oldDir = SAVE_DIR;
+  try {
+    fs.mkdirSync(next.dir, { recursive: true });
+    const result = move ? moveCaptures(oldDir, next.dir) : { moved: [], skipped: [] };
+    try { saveDirAccessStop?.(); } catch {}
+    saveDirAccessStop = null;
+    if (IS_MAS && next.bookmark) {
+      try { saveDirAccessStop = app.startAccessingSecurityScopedResource(next.bookmark); } catch {}
+    }
+    setSaveDir(next.dir);
+    fs.mkdirSync(ANNOTATION_DIR, { recursive: true });
+    const isDefault = path.resolve(next.dir) === path.resolve(DEFAULT_SAVE_DIR);
+    writeSettings({ saveDir: isDefault ? null : next.dir, saveDirBookmark: isDefault ? null : next.bookmark });
+    broadcastSettings();
+    return { oldDir, newDir: SAVE_DIR, moved: result.moved, skipped: result.skipped };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.on('captures-folder-reveal', () => shell.openPath(SAVE_DIR));
+ipcMain.handle('captures-folder-count', () => {
+  try { return fs.readdirSync(SAVE_DIR).filter(isCaptureFile).length; } catch { return 0; }
+});
 
 function captureFromShortcut(kind) {
   if (kind === 'repeat') return captureLastRegion();
@@ -375,7 +640,7 @@ function cleanupTempExports() {
 }
 
 function migrateLegacySaveDir() {
-  if (IS_MAS) return; // sandbox can't reach ~/Documents
+  if (IS_MAS || SAVE_DIR !== DEFAULT_SAVE_DIR) return; // sandbox can't reach ~/Documents; custom folder: nothing to migrate
   try {
     if (fs.existsSync(LEGACY_SAVE_DIR) && !fs.existsSync(SAVE_DIR)) {
       fs.renameSync(LEGACY_SAVE_DIR, SAVE_DIR);
@@ -418,14 +683,15 @@ function buildTrayMenu() {
     { label: 'Capture Window',      accelerator: shortcuts.window, click: () => triggerCapture('window') },
     { label: 'Capture Full Screen', accelerator: shortcuts.full, click: () => triggerCapture('full') },
     { label: 'Delayed Full Screen (5s)', click: () => delayedCapture('full', 5000) },
-    { label: 'Auto-copy After Capture', type: 'checkbox', checked: !!settings.autoCopyAfterCapture, click: item => writeSettings({ autoCopyAfterCapture: item.checked }) },
+    { label: 'Auto-copy After Capture', type: 'checkbox', checked: !!settings.autoCopyAfterCapture, click: item => updateSettings({ autoCopyAfterCapture: item.checked }) },
     { type: 'separator' },
     { label: 'Show / Hide HUD', click: toggleHUD },
     { label: 'Open Captures Folder', click: () => shell.openPath(SAVE_DIR) },
     { type: 'separator' },
     // Off by default: App Review requires the user to opt in to launching at login.
     // Disabled in dev so the bare Electron binary doesn't get registered.
-    { label: 'Launch at Login', type: 'checkbox', enabled: app.isPackaged, checked: app.getLoginItemSettings().openAtLogin, click: item => app.setLoginItemSettings({ openAtLogin: item.checked }) },
+    { label: 'Launch at Login', type: 'checkbox', enabled: app.isPackaged, checked: app.getLoginItemSettings().openAtLogin, click: item => updateSettings({ launchAtLogin: item.checked }) },
+    { label: 'Settings…', click: () => openSettings() },
     { label: "About Jack's Picker", click: showAbout },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
@@ -441,8 +707,9 @@ function showAbout() {
 // ── HUD window ────────────────────────────────────────────────────────────────
 
 function createHUD() {
+  const { hudScale } = appSettings().appearance;
   hudWindow = new BrowserWindow({
-    width: HUD_WIDTH, height: 90,
+    width: Math.round(HUD_WIDTH * hudScale), height: Math.round(HUD_HEIGHT * hudScale),
     x: 120, y: 80,
     frame: false, transparent: true,
     alwaysOnTop: true, resizable: false,
@@ -451,6 +718,7 @@ function createHUD() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      zoomFactor: hudScale,
     },
   });
   hudWindow.loadFile(path.join(__dirname, 'src', 'hud.html'));
@@ -657,6 +925,7 @@ async function captureWindowFromPicker() {
     windowPickerWin = new BrowserWindow({
       width: 760, height: 620,
       show: false,
+      backgroundColor: windowBackground(),
       acceptFirstMouse: true,
       alwaysOnTop: true,
       skipTaskbar: true,
@@ -791,22 +1060,29 @@ function openEditor(imageDataURL, rect, savedFilePath) {
     return;
   }
 
-  editorWin = new BrowserWindow({
-    width: 1100, height: 760, minWidth: 700, minHeight: 520,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true, nodeIntegration: false,
-    },
-  });
-  editorWin.loadFile(path.join(__dirname, 'src', 'editor.html'));
+  createEditorWindow();
   editorWin.webContents.once('did-finish-load', () => {
     editorWin.webContents.send('image-data', payload);
   });
+}
+
+function createEditorWindow() {
+  editorWin = new BrowserWindow({
+    width: 1100, height: 760, minWidth: 700, minHeight: 520,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    backgroundColor: windowBackground(),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true, nodeIntegration: false,
+      zoomFactor: appSettings().appearance.uiScale,
+    },
+  });
+  editorWin.loadFile(path.join(__dirname, 'src', 'editor.html'));
   editorWin.on('closed', () => {
     editorWin = null;
     showHUD();
   });
+  return editorWin;
 }
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
@@ -821,21 +1097,25 @@ ipcMain.on('hud-capture', (_e, mode) => {
 });
 
 ipcMain.on('hud-set-collapsed', (_e, collapsed) => {
-  if (!hudWindow || hudWindow.isDestroyed()) return;
-  hudWindow.setResizable(true);
-  hudWindow.setSize(collapsed ? 70 : HUD_WIDTH, collapsed ? 70 : 90, false);
-  hudWindow.setResizable(false);
+  hudCollapsed = !!collapsed;
+  sizeHUD();
 });
+
+// The HUD's content is scaled with the window's zoom, so its size scales too.
+function sizeHUD() {
+  if (!hudWindow || hudWindow.isDestroyed()) return;
+  const { hudScale } = appSettings().appearance;
+  hudWindow.webContents.setZoomFactor(hudScale);
+  hudWindow.setResizable(true);
+  hudWindow.setSize(
+    Math.round((hudCollapsed ? HUD_COLLAPSED : HUD_WIDTH) * hudScale),
+    Math.round((hudCollapsed ? HUD_COLLAPSED : HUD_HEIGHT) * hudScale), false);
+  hudWindow.setResizable(false);
+}
 
 ipcMain.on('hud-history', () => {
   if (editorWin && !editorWin.isDestroyed()) { editorWin.focus(); return; }
-  editorWin = new BrowserWindow({
-    width: 1100, height: 760, minWidth: 700, minHeight: 520,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
-  });
-  editorWin.loadFile(path.join(__dirname, 'src', 'editor.html'));
-  editorWin.on('closed', () => { editorWin = null; showHUD(); });
+  createEditorWindow();
 });
 
 ipcMain.handle('save-recording', async (_e, buffer, ext) => {
@@ -885,6 +1165,13 @@ ipcMain.handle('mic-access', async () => {
   return false;
 });
 
+// The Keyboard Shortcuts window, where macOS's own screenshot shortcuts (⌘⇧3/4/5) can be turned
+// off. It opens on whichever section was used last: macOS has no link to its Screenshots section,
+// so the hotkey dialog tells people to pick it.
+ipcMain.on('open-keyboard-settings', () => {
+  if (process.platform === 'darwin') shell.openExternal('x-apple.systempreferences:com.apple.preference.keyboard?Shortcuts');
+});
+
 ipcMain.on('open-mic-settings', () => {
   if (process.platform === 'darwin') shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
   else if (process.platform === 'win32') shell.openExternal('ms-settings:privacy-microphone');
@@ -907,11 +1194,6 @@ ipcMain.handle('shortcuts-set', (_e, shortcuts) => {
   const failures = [];
   Object.keys(DEFAULT_SHORTCUTS).forEach(kind => {
     const value = String(shortcuts?.[kind] || '').trim();
-    if (process.platform === 'darwin' && MACOS_RESERVED_SHORTCUTS.has(value)) {
-      failures.push({ kind, accelerator: value, reason: 'reserved' });
-      cleaned[kind] = DEFAULT_SHORTCUTS[kind];
-      return;
-    }
     cleaned[kind] = value || DEFAULT_SHORTCUTS[kind];
   });
   writeSettings({ shortcuts: cleaned });
@@ -960,12 +1242,14 @@ ipcMain.on('capture-done', (_e, { imageDataURL, rect }) => {
   finishCapture(imageDataURL, rect);
 });
 
-ipcMain.on('capture-cancel', () => {
+function cancelCapture() {
   closeCaptureWin();
   streamMode = null;
   restoreEditorAfterStream();
   showHUD();
-});
+}
+
+ipcMain.on('capture-cancel', () => cancelCapture());
 
 ipcMain.on('editor-copy', (_e, dataURL) => {
   clipboard.writeImage(nativeImage.createFromDataURL(dataURL));
@@ -1129,7 +1413,9 @@ ipcMain.handle('gallery-delete', async (_e, filePath) => {
   try {
     const safePath = safeCapturePath(filePath, { allowMedia: true });
     if (!safePath || !fs.existsSync(safePath)) return { success: false };
-    try { await shell.trashItem(safePath); } catch { fs.unlinkSync(safePath); }
+    // Only ever to the Trash: if that fails the capture stays where it is.
+    try { await shell.trashItem(safePath); }
+    catch (err) { logError('Move to Trash', err); return { success: false, reason: 'trash' }; }
     if (MEDIA_EXT.test(safePath)) {
       try { fs.unlinkSync(videoSessionPathFor(safePath)); } catch {}
     }
@@ -1218,7 +1504,8 @@ ipcMain.handle('video-session-load', (_e, filePath) => {
   const clips = [];
   let missing = 0;
   for (const c of Array.isArray(session.clips) ? session.clips : []) {
-    const p = (c?.path && safeMediaPath(c.path)) || safeMediaPath(path.join(SAVE_DIR, path.basename(String(c?.name || ''))));
+    const byPath = c?.path ? safeMediaPath(c.path) : null;   // linked-folder clips; stale after a folder move
+    const p = byPath && fs.existsSync(byPath) ? byPath : safeMediaPath(path.join(SAVE_DIR, path.basename(String(c?.name || ''))));
     if (!p || !fs.existsSync(p)) { missing++; continue; }
     clips.push({
       item: { filename: path.basename(p), filePath: p, fileURL: pathToFileURL(p).href, kind: mediaKind(p) },
@@ -1361,9 +1648,52 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 app.on('web-contents-created', (_e, contents) => {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   contents.on('will-navigate', e => e.preventDefault());
+  // Page errors, including uncaught exceptions, go to the log too.
+  contents.on('console-message', details => {
+    if (details.level !== 'error') return;
+    logError(`Page ${pageName(contents)}`, `${details.message} (${path.basename(details.sourceId || '')}:${details.lineNumber})`);
+  });
 });
 
+// A page that crashed (e.g. out of memory on a long video) is reloaded rather than left blank;
+// the capture overlay and window picker are cancelled instead. After three crashes in a minute
+// the window is left alone, so a crash loop can't spin.
+const pageCrashes = new Map();
+app.on('render-process-gone', (_e, contents, details) => {
+  logError(`Page ${pageName(contents)} stopped`, `${details.reason} (exit code ${details.exitCode})`);
+  if (details.reason === 'clean-exit') return;
+  const win = BrowserWindow.fromWebContents(contents);
+  if (!win || win.isDestroyed()) return;
+  if (win === captureWin) { cancelCapture(); return; }
+  if (win === windowPickerWin) { win.close(); return; }
+  const now = Date.now();
+  const recent = (pageCrashes.get(contents.id) || []).filter(t => now - t < 60_000).concat(now);
+  pageCrashes.set(contents.id, recent);
+  if (recent.length > 3) return;
+  contents.reload();
+  if (win === editorWin) {
+    dialog.showMessageBox(win, {
+      type: 'warning',
+      message: 'The editor stopped unexpectedly',
+      detail: 'It has been reopened. Your saved captures are not affected.',
+    }).catch(() => {});
+  }
+});
+
+app.on('child-process-gone', (_e, details) => {
+  if (details.reason !== 'clean-exit') logError(`${details.type} process stopped`, `${details.reason} (exit code ${details.exitCode})`);
+});
+
+function pageName(contents) {
+  try { return path.basename(new URL(contents.getURL()).pathname) || 'window'; }
+  catch { return 'window'; }
+}
+
+ipcMain.on('show-log', () => showLog());
+
 app.whenReady().then(() => {
+  restoreCapturesFolder();
+  nativeTheme.themeSource = appSettings().appearance.theme;
   migrateLegacySaveDir();
   fs.mkdirSync(SAVE_DIR, { recursive: true });
   fs.mkdirSync(ANNOTATION_DIR, { recursive: true });

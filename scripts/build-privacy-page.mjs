@@ -1,8 +1,8 @@
 // Renders store/privacy-policy.md to docs/privacy.html for GitHub Pages, so the App Store
 // privacy policy URL always matches the Markdown source. Handles only the Markdown that
 // file uses (headings, paragraphs, bullet lists, bold, code, links) to avoid a dependency.
-// Usage: node scripts/build-privacy-page.mjs
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+// Usage: node scripts/build-privacy-page.mjs [--check]   (--check: exit 1 if docs/privacy.html is out of date)
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 
 const SRC = 'store/privacy-policy.md';
 const OUT = 'docs/privacy.html';
@@ -80,6 +80,12 @@ ${body}
 </body>
 </html>
 `;
+
+if (process.argv.includes('--check')) {
+  const current = existsSync(OUT) && readFileSync(OUT, 'utf8') === page;
+  console.log(current ? `${OUT} is up to date` : `${OUT} is out of date: run npm run build:privacy`);
+  process.exit(current ? 0 : 1);
+}
 
 mkdirSync('docs', { recursive: true });
 writeFileSync(OUT, page);

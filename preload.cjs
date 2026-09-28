@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   recordingStopped:   ()    => ipcRenderer.send('recording-stopped'),
   micAccess:          ()    => ipcRenderer.invoke('mic-access'),
   openMicSettings:    ()    => ipcRenderer.send('open-mic-settings'),
+  openKeyboardSettings: ()  => ipcRenderer.send('open-keyboard-settings'),
   scrollCaptureDone:  (dataURL) => ipcRenderer.send('scroll-capture-done', dataURL),
 
   // Capture overlay → Main
@@ -64,6 +65,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   videoSessionSave:  (data)     => ipcRenderer.invoke('video-session-save', data),
   mediaList:         ()         => ipcRenderer.invoke('media-list'),
   mediaThumb:        (filePath) => ipcRenderer.invoke('media-thumb', filePath),
+
+  // Settings
+  settingsGet:          ()       => ipcRenderer.invoke('settings-get'),
+  settingsSet:          (patch)  => ipcRenderer.invoke('settings-set', patch),
+  onSettingsChanged:    (cb)     => ipcRenderer.on('settings-changed', (_e, s) => cb(s)),
+  onOpenSettings:       (cb)     => ipcRenderer.on('open-settings', (_e, section) => cb(section)),
+  openSettings:         ()       => ipcRenderer.send('settings-open'),
+  showLog:              ()       => ipcRenderer.send('show-log'),
+  capturesFolderChoose: ()       => ipcRenderer.invoke('captures-folder-choose'),
+  capturesFolderApply:  (data)   => ipcRenderer.invoke('captures-folder-apply', data),
+  capturesFolderReveal: ()       => ipcRenderer.send('captures-folder-reveal'),
+  capturesFolderCount:  ()       => ipcRenderer.invoke('captures-folder-count'),
 
   // Project folders
   projectFolders:      ()     => ipcRenderer.invoke('project-folders'),

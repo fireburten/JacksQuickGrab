@@ -17,11 +17,12 @@ We can't see your screenshots, recordings, text, or settings, and we never recei
 
 ## What the app stores on your Mac
 
-- **Captures and recordings** are saved as regular image and video files in your **Pictures ▸ Jack's Picker** folder.
+- **Captures and recordings** are saved as regular image and video files in your **Pictures ▸ Jack's Picker** folder, or in another folder you choose in **Settings ▸ Storage**.
 - **Annotations** (arrows, text, blur, and so on) are saved in a hidden `.annotations` folder inside that folder, so you can edit your markups later.
 - **Settings** such as your hotkeys, auto-copy choice, pinned captures, projects, and editor preferences are stored in the app's private container on your Mac.
 - **Linked folders:** if you link a project to a folder you choose, the app copies captures you add to that project into it and lists the images and videos already there. It only reads that folder and adds its own copies; it never renames, moves, or deletes your files there. Unlinking leaves the folder as it is.
 - **Temporary copies:** when you share a capture or drag it into another app, a copy is written to the app's temporary folder so the receiving app can read it. These copies are deleted automatically after a day.
+- **Error log:** if something goes wrong, the app writes a short log of the error (the time, the error message, and the names of any files involved) to its private Logs folder. It is never sent anywhere. You can open it from **Settings ▸ Storage ▸ Diagnostic log**, for example to attach it to a support email yourself.
 
 This data stays on your device. It doesn't leave your Mac unless you send it somewhere yourself, for example by copying, dragging, saving, or using the Share button (AirDrop, Mail, Messages, and so on). Anything you share is handled by the app or service you choose. If you use iCloud Drive, Time Machine, or another backup or sync service, those files may be included in it under that service's own terms.
 
@@ -44,7 +45,7 @@ Jack's Picker writes to your clipboard when you copy an image or text, or when y
 ## Deleting your data
 
 - **A single capture:** right-click it in the app's Recents sidebar and choose **Delete**. It moves to the Trash along with its annotations.
-- **All captures:** delete the **Pictures ▸ Jack's Picker** folder in Finder.
+- **All captures:** delete the **Pictures ▸ Jack's Picker** folder (or the folder you chose in Settings) in Finder.
 - **Settings:** quit and delete the app, then delete the `~/Library/Containers/com.rindworks.jackspicker` folder (in Finder, choose **Go ▸ Go to Folder…** and paste that path).
 
 ## Information Apple may share with us

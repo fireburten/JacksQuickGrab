@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; media-src mediastream:; base-uri 'none'; form-action 'none'">
 <link rel="stylesheet" href="fonts/poppins.css">
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -20,10 +22,10 @@ body {
   flex-direction: row;
   align-items: center;
   gap: 3px;
-  background: rgba(27, 19, 53, 0.97);
+  background: rgba(var(--bg-float-rgb),0.97);
   border-radius: 18px;
   padding: 8px 12px;
-  box-shadow: 0 4px 14px rgba(0,0,0,.34), 0 1px 2px rgba(0,0,0,.28), 0 0 0 1px rgba(255,255,255,.07);
+  box-shadow: 0 4px 14px rgba(0,0,0,calc(.34 * var(--shadow-k))), 0 1px 2px rgba(0,0,0,calc(.28 * var(--shadow-k))), 0 0 0 1px rgba(var(--ink),calc(.07 * var(--line-boost)));
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   -webkit-app-region: drag;
@@ -47,8 +49,8 @@ body {
   height: 20px;
   border-radius: 999px;
   font-size: 13px;
-  background: rgba(108,78,246,.88);
-  color: #fff;
+  background: rgba(var(--accent-rgb),.88);
+  color: var(--on-accent);
 }
 .drag-handle {
   width: 52px;
@@ -78,7 +80,7 @@ body {
   padding: 6px 10px;
   border-radius: 12px;
   border: none;
-  background: rgba(255,255,255,.05);
+  background: rgba(var(--ink),calc(.05 * var(--ink-boost)));
   cursor: pointer;
   min-width: 46px;
   transition: background .15s;
@@ -87,15 +89,15 @@ body {
   color: inherit;
 }
 .mode-btn:disabled { cursor: default; }
-.mode-btn:hover:not(:disabled) { background: rgba(108,78,246,.25); }
+.mode-btn:hover:not(:disabled) { background: rgba(var(--accent-rgb),calc(.25 * var(--ink-boost))); }
 .mode-btn:disabled { opacity: 0.35; cursor: default; }
-.mode-btn .ic { font-size: 17px; line-height: 1; color: rgba(255,255,255,.6); }
-.mode-btn:hover:not(:disabled) .ic { color: #fff; }
-.mode-btn .lbl { font-size: 10px; font-weight: 500; color: rgba(255,255,255,.38); }
-.mode-btn:hover:not(:disabled) .lbl { color: rgba(255,255,255,.9); }
-.mode-btn.flash { background: #6C4EF6 !important; }
-.mode-btn.flash .ic, .mode-btn.flash .lbl { color: #fff !important; }
-.sep { width: 1px; height: 34px; background: rgba(255,255,255,.08); margin: 0 4px; flex-shrink: 0; }
+.mode-btn .ic { font-size: 17px; line-height: 1; color: rgba(var(--ink),calc(.6 + .24 * var(--text-boost) + .4 * var(--text-lift))); }
+.mode-btn:hover:not(:disabled) .ic { color: var(--fg); }
+.mode-btn .lbl { font-size: 10px; font-weight: 500; color: rgba(var(--ink),calc(.38 + .2356 * var(--text-boost) + .62 * var(--text-lift))); }
+.mode-btn:hover:not(:disabled) .lbl { color: rgba(var(--ink),calc(.9 + .09 * var(--text-boost) + .1 * var(--text-lift))); }
+.mode-btn.flash { background: var(--accent) !important; }
+.mode-btn.flash .ic, .mode-btn.flash .lbl { color: var(--on-accent) !important; }
+.sep { width: 1px; height: 34px; background: rgba(var(--ink),calc(.08 * var(--line-boost))); margin: 0 4px; flex-shrink: 0; }
 .rec-bar {
   display: none;
   align-items: center;
@@ -109,7 +111,7 @@ body {
 }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
 .rec-timer {
-  font-size: 14px; font-weight: 600; color: #fff;
+  font-size: 14px; font-weight: 600; color: var(--fg);
   font-variant-numeric: tabular-nums; min-width: 38px;
 }
 .rec-stop {
@@ -121,18 +123,18 @@ body {
 .audio-toggles { display: flex; flex-direction: column; gap: 3px; margin-left: -1px; -webkit-app-region: no-drag; }
 .audio-toggle {
   width: 24px; height: 22px; border: none; border-radius: 7px; cursor: pointer;
-  background: rgba(255,255,255,.05); font-size: 11px; line-height: 1; filter: grayscale(1); opacity: .45;
+  background: rgba(var(--ink),calc(.05 * var(--ink-boost))); font-size: 11px; line-height: 1; filter: grayscale(1); opacity: .45;
 }
 .audio-toggle:hover { opacity: .8; }
-.audio-toggle.on { background: rgba(108,78,246,.45); filter: none; opacity: 1; }
+.audio-toggle.on { background: rgba(var(--accent-rgb),.45); filter: none; opacity: 1; }
 .rec-audio { font-size: 12px; letter-spacing: 2px; }
 .rec-note {
-  border: none; background: rgba(245,158,11,.18); color: #fbbf24; font: 600 11px inherit;
+  border: none; background: rgba(245,158,11,calc(.18 * var(--ink-boost))); color: rgb(var(--warn-text-rgb)); font: 600 11px inherit;
   padding: 4px 8px; border-radius: 8px; cursor: pointer; -webkit-app-region: no-drag; white-space: nowrap;
 }
-.rec-bar.scroll .rec-dot { background: #6c4ef6; }
-.rec-bar.scroll .rec-stop { background: #6c4ef6; }
-.rec-bar.scroll .rec-stop:hover { background: #5a3de0; }
+.rec-bar.scroll .rec-dot { background: var(--accent); }
+.rec-bar.scroll .rec-stop { background: var(--accent); }
+.rec-bar.scroll .rec-stop:hover { background: var(--accent-strong); }
 .rec-bar.busy .rec-dot { animation: none; opacity: .4; }
 .rec-bar.busy .rec-stop { opacity: .5; pointer-events: none; }
 .hist-btn {
@@ -148,22 +150,22 @@ body {
   -webkit-app-region: no-drag;
   font-family: inherit;
 }
-.hist-btn .ic { font-size: 15px; color: rgba(255,255,255,.3); }
-.hist-btn .lbl { font-size: 10px; color: rgba(255,255,255,.22); }
-.hist-btn:hover .ic { color: rgba(255,255,255,.6); }
-.hist-btn:hover .lbl { color: rgba(255,255,255,.5); }
+.hist-btn .ic { font-size: 15px; color: rgba(var(--ink),calc(.3 + .21 * var(--text-boost) + .7 * var(--text-lift))); }
+.hist-btn .lbl { font-size: 10px; color: rgba(var(--ink),calc(.22 + .1716 * var(--text-boost) + .78 * var(--text-lift))); }
+.hist-btn:hover .ic { color: rgba(var(--ink),calc(.6 + .24 * var(--text-boost) + .4 * var(--text-lift))); }
+.hist-btn:hover .lbl { color: rgba(var(--ink),calc(.5 + .25 * var(--text-boost) + .5 * var(--text-lift))); }
 .collapse-btn {
   width: 28px;
   height: 42px;
   border: 0;
   border-radius: 10px;
-  background: rgba(255,255,255,.04);
-  color: rgba(255,255,255,.42);
+  background: rgba(var(--ink),calc(.04 * var(--ink-boost)));
+  color: rgba(var(--ink),calc(.42 + .2436 * var(--text-boost) + .58 * var(--text-lift)));
   cursor: pointer;
   font: 700 16px system-ui;
   -webkit-app-region: no-drag;
 }
-.collapse-btn:hover { background: rgba(108,78,246,.22); color: #fff; }
+.collapse-btn:hover { background: rgba(var(--accent-rgb),calc(.22 * var(--ink-boost))); color: var(--fg); }
 </style>
 </head>
 <body>
@@ -291,7 +293,9 @@ document.querySelector('.hist-btn').addEventListener('click', () => {
 // Main opens the region overlay, then sends the chosen rect here. All three modes
 // read the same display stream cropped to that rect; they differ in what they do
 // with the frames.
-const GIF_FPS = 12, GIF_MAX_WIDTH = 800, GIF_MAX_SECS = 30;
+// GIF frame rate and width come from Settings → Recording (see loadRecordingSettings).
+let GIF_FPS = 12, GIF_MAX_WIDTH = 800;
+const GIF_MAX_SECS = 30;
 const SCROLL_FPS = 8, SCROLL_MAX_LENGTH = 20000;
 
 const recBar   = document.getElementById('rec-bar');
@@ -494,9 +498,37 @@ async function stopSession() {
 }
 
 // ── Recording audio: 🔊 system audio and 🎙 microphone toggles (remembered) ──
-const REC_AUDIO_KEY = 'jqg-rec-audio';
+// These are Settings → Recording defaults; the toggles here and the Settings panel change
+// the same values, so they always agree.
+const REC_AUDIO_KEY = 'jqg-rec-audio';   // pre-Settings storage, carried over once
 let recAudioPrefs = { system: false, mic: false };
-try { recAudioPrefs = { ...recAudioPrefs, ...JSON.parse(localStorage.getItem(REC_AUDIO_KEY) || '{}') }; } catch {}
+
+function applyRecordingSettings(settings) {
+  const r = settings?.recording;
+  if (!r) return;
+  recAudioPrefs = { system: r.systemAudio, mic: r.mic };
+  GIF_FPS = r.gifFps;
+  GIF_MAX_WIDTH = r.gifWidth;
+  syncAudioToggles();
+}
+
+async function loadRecordingSettings() {
+  let settings = await window.electronAPI?.settingsGet?.().catch(() => null);
+  if (!settings) return;
+  let legacy = null;
+  try { legacy = JSON.parse(localStorage.getItem(REC_AUDIO_KEY) || 'null'); } catch {}
+  if (legacy) {
+    localStorage.removeItem(REC_AUDIO_KEY);
+    if (legacy.system || legacy.mic) settings = await window.electronAPI.settingsSet({ recording: { systemAudio: !!legacy.system, mic: !!legacy.mic } });
+  }
+  applyRecordingSettings(settings);
+}
+window.electronAPI?.onSettingsChanged?.(applyRecordingSettings);
+
+// ⌘, works here too: the Settings panel lives in the editor, which main brings up.
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); window.electronAPI?.openSettings?.(); }
+});
 
 function syncAudioToggles() {
   document.querySelectorAll('.audio-toggle').forEach(b => {
@@ -509,17 +541,20 @@ function syncAudioToggles() {
 
 document.querySelectorAll('.audio-toggle').forEach(b => b.addEventListener('click', async () => {
   const key = b.dataset.audio;
-  recAudioPrefs[key] = !recAudioPrefs[key];
+  const on = !recAudioPrefs[key];
   // Ask for the mic when it's switched on, so the prompt doesn't interrupt a recording.
-  if (key === 'mic' && recAudioPrefs.mic && window.electronAPI && !(await window.electronAPI.micAccess())) {
-    recAudioPrefs.mic = false;
+  if (key === 'mic' && on && window.electronAPI && !(await window.electronAPI.micAccess())) {
     b.title = 'Microphone access is off: allow Jack\'s Picker in System Settings → Privacy & Security → Microphone';
     window.electronAPI.openMicSettings();
+    return;
   }
-  localStorage.setItem(REC_AUDIO_KEY, JSON.stringify(recAudioPrefs));
+  recAudioPrefs[key] = on;
   syncAudioToggles();
+  const settings = await window.electronAPI?.settingsSet?.({ recording: key === 'mic' ? { mic: on } : { systemAudio: on } });
+  applyRecordingSettings(settings);
 }));
 syncAudioToggles();
+loadRecordingSettings();
 
 async function openMicStream() {
   try {

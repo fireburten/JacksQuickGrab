@@ -1,0 +1,117 @@
+/* Jack's Picker appearance tokens, shared by every window (editor, HUD, window picker, capture overlay).
+   theme.js sets <html data-theme="dark|light">, data-contrast="high" and the accent triplets
+   (--accent-rgb, --accent-strong-rgb, --accent-soft-rgb) from its ACCENTS palette.
+
+   Dark is the default: a dimmed violet-grey (the original palette was near-black, with fainter
+   text and borders; its boosts were all 1 / 0). Most of the UI is
+   translucent "ink" layered on a surface, so page styles write overlays against --ink and let the
+   theme / contrast mode scale them:
+     fills    rgba(var(--ink), calc(A * var(--ink-boost)))
+     lines    rgba(var(--ink), calc(A * var(--line-boost)))
+     text     rgba(var(--ink), calc(A + A(1 - A) * var(--text-boost) + (1 - A) * var(--text-lift)))
+     shadows  rgba(0,0,0, calc(A * var(--shadow-k)))
+   The boosts scale fills and lines. --text-boost bends text alphas up in the middle of the range
+   (ink on a light surface needs more alpha than white on dark for the same contrast, while nearly
+   opaque text stays distinct from primary text); --text-lift pulls faint text toward full ink
+   (high contrast). Browsers clamp alphas above 1.
+   New UI can use the plain tokens below (--fg-muted, --line, --bg-panel, …) instead. */
+
+:root {
+  --ink: 255,255,255;
+  --ink-boost: 1.25;
+  --line-boost: 1.7;
+  --text-boost: .35;
+  --text-lift: .25;     /* with the boost: even the faintest labels reach ~4.5:1 on these surfaces */
+  --shadow-k: 1;
+
+  --accent-rgb: 108,78,246;          /* #6c4ef6 */
+  --accent-strong-rgb: 90,61,224;    /* #5a3de0: hover / pressed */
+  --accent-soft-rgb: 155,143,255;    /* #9b8fff: accent-coloured text on dark surfaces */
+  --accent: rgb(var(--accent-rgb));
+  --accent-strong: rgb(var(--accent-strong-rgb));
+  --accent-text: rgb(var(--accent-soft-rgb));
+  --on-accent: #fff;
+
+  --bg-app-rgb: 34,31,50;
+  --bg-app: rgb(var(--bg-app-rgb));  /* #221f32: window, toolbar (main.js windowBackground matches) */
+  --bg-panel: #2a2740;               /* dialog boxes */
+  --bg-sidebar: #1c1a2a;             /* gallery + tool sidebars */
+  --bg-inspector: #1c1a2a;
+  --bg-dock: #26233a;                /* video timeline dock */
+  --bg-elevated: #2d2a45;            /* menus, popovers */
+  --bg-canvas: #2b2842;              /* around the image in the editor */
+  --bg-float-rgb: 38,35,58;          /* floating bars: HUD, capture hint */
+  --bg-input: rgba(var(--ink), calc(.06 * var(--ink-boost)));
+  --bg-well: rgba(0,0,0,.35);        /* empty media thumbnails */
+  --scrim: rgba(0,0,0,.42);          /* behind modal dialogs */
+
+  --fg: rgb(var(--ink));
+  --fg-muted: rgba(var(--ink), calc(.7 + .21 * var(--text-boost) + .3 * var(--text-lift)));
+  --fg-faint: rgba(var(--ink), calc(.42 + .2436 * var(--text-boost) + .58 * var(--text-lift)));
+  --line: rgba(var(--ink), calc(.06 * var(--line-boost)));
+  --line-strong: rgba(var(--ink), calc(.14 * var(--line-boost)));
+  --shadow: 0 12px 32px rgba(0,0,0, calc(.5 * var(--shadow-k)));
+
+  /* Status colours keep their hue; only their text shade changes on light surfaces. */
+  --ok-text-rgb: 34,197,94;
+  --warn-text-rgb: 251,191,36;
+  --danger-text-rgb: 248,113,113;
+}
+
+:root[data-theme="light"] {
+  --ink: 24,18,48;
+  --ink-boost: 1.3;
+  --line-boost: 1.6;
+  --text-boost: .5;     /* with the lift: every text alpha at least matches dark's contrast (up to AA) */
+  --text-lift: .05;
+  --shadow-k: .32;
+
+  --accent-text: color-mix(in srgb, rgb(var(--accent-strong-rgb)) 85%, #000);   /* ≥5:1 on accent tints */
+
+  --bg-app-rgb: 240,239,245;
+  --bg-panel: #fbfafd;
+  --bg-sidebar: #f7f6fa;
+  --bg-inspector: #f7f6fa;
+  --bg-dock: #f7f6fa;
+  --bg-elevated: #ffffff;
+  --bg-canvas: #e2e0ea;
+  --bg-float-rgb: 250,249,253;
+  --bg-well: rgba(24,18,48,.07);
+  --scrim: rgba(24,18,48,.26);
+
+  --ok-text-rgb: 22,101,52;
+  --warn-text-rgb: 120,53,15;
+  --danger-text-rgb: 185,28,28;
+}
+
+/* High contrast works with either theme: stronger fills, borders and text. */
+:root[data-contrast="high"] {
+  --ink-boost: 1.7;
+  --line-boost: 2.6;
+  --text-lift: .55;
+  --accent-text: color-mix(in srgb, rgb(var(--accent-soft-rgb)) 60%, #fff);
+  --bg-canvas: #1e1b2e;
+}
+
+:root[data-theme="light"][data-contrast="high"] {
+  --ink: 10,8,22;
+  --ink-boost: 1.7;
+  --line-boost: 3;
+  --text-boost: .5;
+  --text-lift: .6;
+  --shadow-k: .5;
+  --accent-text: color-mix(in srgb, rgb(var(--accent-strong-rgb)) 80%, #000);
+
+  --bg-app-rgb: 236,235,242;
+  --bg-panel: #ffffff;
+  --bg-sidebar: #ffffff;
+  --bg-inspector: #ffffff;
+  --bg-dock: #ffffff;
+  --bg-canvas: #d8d6e1;
+  --bg-float-rgb: 255,255,255;
+  --bg-well: rgba(10,8,22,.1);
+
+  --ok-text-rgb: 20,83,45;
+  --warn-text-rgb: 98,42,10;
+  --danger-text-rgb: 153,27,27;
+}
