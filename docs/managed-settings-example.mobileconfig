@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Example configuration profile for Jack's Picker (preference domain com.rindworks.jackspicker).
+  Keep only the keys you want to enforce; anything you leave out stays up to each person.
+  Replace the example.com identifiers with your own, then deploy it with your MDM.
+  Keys:
+    CapturesFolder        string  Where captures are saved ("~/..." is allowed). App Store version: inside ~/Pictures.
+    CompanyName           string  Company name for guides and name watermarks.
+    Stamp                 string  none | confidential | internal | draft: stamps every new capture.
+    CheckSensitiveInfo    bool    Look for emails, card numbers, keys... before copying, sharing or saving.
+    DisableTextSearch     bool    Don't read the text in captures for search.
+    DisableSharing        bool    Hide "Send to..." (Slack, Jira, Linear, storage links...).
+    AutoCopyAfterCapture  bool    Force copying each new capture to the clipboard on or off.
+    DisableMicrophone     bool    Recordings never include the microphone.
+    DisableSystemAudio    bool    Recordings never include the Mac's sound.
+    DisableCamera         bool    Recordings never include the camera.
+-->
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key>
+      <string>com.rindworks.jackspicker</string>
+      <key>PayloadIdentifier</key>
+      <string>com.example.jackspicker.settings</string>
+      <key>PayloadUUID</key>
+      <string>8ADF468B-85B2-4A80-9B37-F2307F11DF6C</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>PayloadDisplayName</key>
+      <string>Jack's Picker settings</string>
+      <key>CheckSensitiveInfo</key>
+      <true/>
+      <key>Stamp</key>
+      <string>internal</string>
+      <key>CompanyName</key>
+      <string>Example Inc.</string>
+      <key>DisableCamera</key>
+      <true/>
+    </dict>
+  </array>
+  <key>PayloadDisplayName</key>
+  <string>Jack's Picker (example)</string>
+  <key>PayloadDescription</key>
+  <string>Company settings for Jack's Picker.</string>
+  <key>PayloadIdentifier</key>
+  <string>com.example.jackspicker</string>
+  <key>PayloadType</key>
+  <string>Configuration</string>
+  <key>PayloadUUID</key>
+  <string>EF375F67-BBAC-4612-80FD-4AAB34FC0DE5</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+</dict>
+</plist>

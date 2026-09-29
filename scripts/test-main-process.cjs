@@ -20,7 +20,7 @@ console.error = () => {};   // main.js echoes everything it logs; the log file i
 class ExitCalled extends Error {}
 
 // Loads main.js against a fake electron and returns what it registered plus the fakes' records.
-function loadMain({ packaged = false, switches = [], trash = 'ok' } = {}) {
+function loadMain({ packaged = false, switches = [], trash = 'ok', policy = {} } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'jp-main-test-'));
   const env = {
     tmp, home: path.join(tmp, 'home'),
@@ -58,7 +58,7 @@ function loadMain({ packaged = false, switches = [], trash = 'ok' } = {}) {
       getPath: name => path.join(tmp, name), whenReady: () => new Promise(() => {}), isReady: () => true,
       on: (ev, fn) => { (env.appOn[ev] ||= []).push(fn); }, focus() {},
       isPackaged: packaged, commandLine: { hasSwitch: name => switches.includes(name) },
-      getVersion: () => '1.0.0', getAppPath: () => ROOT,
+      getVersion: () => '1.0.0', getLocale: () => 'en-US', getAppPath: () => ROOT,
       getLoginItemSettings: () => ({ openAtLogin: false }),
       setLoginItemSettings() { throw new Error('must not register a dev build as a login item'); },
     },
@@ -71,7 +71,9 @@ function loadMain({ packaged = false, switches = [], trash = 'ok' } = {}) {
     ipcMain: {
       handle: (c, f) => { env.handle[c] = f; }, on: (c, f) => { env.on[c] = f; }, once() {}, removeListener() {},
     },
-    screen: {}, clipboard: {}, nativeImage: {}, desktopCapturer: {}, systemPreferences: {}, ShareMenu: class {},
+    screen: {}, clipboard: { writeText: text => { env.clipboardText = text; } }, nativeImage: {}, desktopCapturer: {}, ShareMenu: class {},
+    // Managed preferences (a configuration profile) read as strings, as macOS returns them.
+    systemPreferences: { getUserDefault: key => (key in policy ? String(policy[key]) : '') },
     nativeTheme: { themeSource: 'system', shouldUseDarkColors: true },
     dialog: {
       showOpenDialog: async () => ({ canceled: false, filePaths: [env.chooseDir], bookmarks: [] }),
@@ -98,8 +100,8 @@ function loadMain({ packaged = false, switches = [], trash = 'ok' } = {}) {
     const m = new Module(MAIN, module);
     m.filename = MAIN;
     m.paths = Module._nodeModulePaths(ROOT);
-    m._compile(fs.readFileSync(MAIN, 'utf8') + '\nmodule.exports.__test = { buildTrayMenu };', MAIN);
-    env.buildTrayMenu = m.exports.__test.buildTrayMenu;
+    m._compile(fs.readFileSync(MAIN, 'utf8') + '\nmodule.exports.__test = { buildTrayMenu, copyTextFromImage, restoreCapturesFolder, getSaveDir: () => SAVE_DIR };', MAIN);
+    Object.assign(env, m.exports.__test);
   } catch (e) {
     if (!(e instanceof ExitCalled)) throw e;
   } finally {
@@ -271,6 +273,63 @@ async function hotkeys() {
   check('hotkeys: the dialog can open Keyboard settings', /^x-apple\.systempreferences:com\.apple\.preference\.keyboard/.test(m.opened.at(-1) || ''), m.opened.at(-1));
 }
 
+async function copyText() {
+  const m = loadMain();
+  const lines = await m.copyTextFromImage('data:image/png;base64,', async () => ({ success: true, items: [{ text: 'Invoice 4471' }, { text: 'Total due: $1,280' }] }));
+  check('copy text: the lines go on the clipboard', m.clipboardText === 'Invoice 4471\nTotal due: $1,280' && lines === m.clipboardText, JSON.stringify(m.clipboardText));
+  const words = await m.copyTextFromImage('data:image/png;base64,', async () => ({ success: true, items: [{ text: 'Hello', obsId: 0 }, { text: 'there', obsId: 0 }, { text: 'Bye', obsId: 1 }] }));
+  check('copy text: word-level results are joined into lines (Windows helper)', words === 'Hello there\nBye', JSON.stringify(words));
+  m.clipboardText = 'unchanged';
+  await m.copyTextFromImage('data:image/png;base64,', async () => ({ success: true, items: [] }));
+  check('copy text: nothing found leaves the clipboard alone', m.clipboardText === 'unchanged');
+  check('copy text: nothing is saved as a capture', !fs.existsSync(m.saveDir) || fs.readdirSync(m.saveDir).filter(f => !f.startsWith('.')).length === 0);
+  m.buildTrayMenu();
+  const item = m.template.find(i => i.label === 'Copy Text from Screen');
+  check('copy text: in the menu bar menu with its hotkey', item && item.accelerator === 'CommandOrControl+Alt+Shift+T', JSON.stringify(item && { ...item, click: undefined }));
+}
+
+async function managedSettings() {
+  const free = await call(loadMain(), 'settings-get');
+  check('managed: nothing is locked without a profile', JSON.stringify(free.managed) === '{}');
+
+  const m = loadMain({ policy: {
+    CheckSensitiveInfo: 1, DisableTextSearch: 1, DisableMicrophone: 1, AutoCopyAfterCapture: 0,
+    CompanyName: 'Acme Inc', Stamp: 'internal', DisableSharing: 1, CapturesFolder: '~/Company Shots',
+  } });
+  const s = await call(m, 'settings-get');
+  check('managed: the organization’s values win', s.checkSensitive === true && s.searchText === false && s.recording.mic === false
+    && s.autoCopyAfterCapture === false && s.brand.name === 'Acme Inc' && s.brand.stamp === 'internal', JSON.stringify(s));
+  check('managed: the UI is told what to lock', JSON.stringify(Object.keys(s.managed).sort()) === JSON.stringify(
+    ['autoCopyAfterCapture', 'capturesFolder', 'checkSensitive', 'companyName', 'mic', 'searchText', 'sharing', 'stamp']), JSON.stringify(s.managed));
+  const after = await call(m, 'settings-set', { checkSensitive: false, searchText: true, recording: { mic: true }, brand: { name: 'Mine', stamp: 'none' } });
+  check('managed: the user can’t change them', after.checkSensitive === true && after.searchText === false && after.recording.mic === false
+    && after.brand.name === 'Acme Inc' && after.brand.stamp === 'internal');
+  check('managed: other settings still change', (await call(m, 'settings-set', { appearance: { theme: 'light' } })).appearance.theme === 'light');
+  m.restoreCapturesFolder();
+  check('managed: captures go to the organization’s folder', m.getSaveDir() === path.join(m.home, 'Company Shots') && fs.existsSync(path.join(m.home, 'Company Shots')), m.getSaveDir());
+  check('managed: the captures folder can’t be changed', (await call(m, 'captures-folder-choose'))?.error === 'managed'
+    && Boolean((await call(m, 'captures-folder-apply', { target: 'default', move: false }))?.error));
+  m.buildTrayMenu();
+  const autoCopy = m.template.find(i => i.label === 'Auto-copy After Capture');
+  check('managed: the menu bar’s auto-copy is locked', autoCopy.enabled === false && autoCopy.checked === false);
+  const stringy = loadMain({ policy: { CheckSensitiveInfo: 'yes', DisableTextSearch: 'false' } });
+  const t = await call(stringy, 'settings-get');
+  check('managed: yes/true/1 and false/0 are understood', t.checkSensitive === true && t.searchText === true);
+}
+
+async function languages() {
+  const m = loadMain();
+  const labels = () => { m.buildTrayMenu(); return m.template.filter(i => i.label).map(i => i.label); };
+  const english = labels().filter(l => l !== "Jack's Picker");   // the app's name stays as it is
+  await call(m, 'settings-set', { appearance: { language: 'de' } });
+  const german = labels();
+  const de = require('../src/locales/de.js');
+  check('language: the menu bar menu follows the setting', german.includes('Einstellungen …') && !german.includes('Settings…'), german.join(' | '));
+  check('language: every menu bar item has a German translation', english.every(l => de[l]), english.filter(l => !de[l]).join(' | '));
+  check('language: an unknown language falls back to System', (await call(m, 'settings-set', { appearance: { language: 'xx' } })).appearance.language === 'system');
+  check('language: System follows the Mac (English here)', labels().includes('Settings…'));
+}
+
 function debuggingRefusal() {
   check('packaged build refuses --remote-debugging-port', loadMain({ packaged: true, switches: ['remote-debugging-port'] }).exits.join() === '1');
   check('packaged build refuses --remote-debugging-pipe', loadMain({ packaged: true, switches: ['remote-debugging-pipe'] }).exits.join() === '1');
@@ -286,6 +345,9 @@ function debuggingRefusal() {
     await errorLog();
     await crashRecovery();
     await hotkeys();
+    await copyText();
+    await managedSettings();
+    await languages();
     debuggingRefusal();
   } catch (e) {
     check('harness ran to completion', false, e.stack);

@@ -9,6 +9,13 @@ const os      = require('os');
 const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const crypto = require('crypto');
+const { createSearchIndex } = require('./lib/search-index.cjs');
+// Translations (src/i18n.js + src/locales): the menu-bar menu, dialogs and HUD messages.
+const i18n = require('./src/i18n.js');
+for (const code of Object.keys(i18n.LANGUAGES).filter(c => c !== 'en')) {
+  try { i18n.add(code, require(`./src/locales/${code}.js`)); } catch {}
+}
+const tr = (text, vars) => i18n.t(text, vars);
 
 // Packaged builds refuse remote debugging: another program could start the app with it and drive
 // it, along with its Screen Recording and Microphone access. (--inspect and ELECTRON_RUN_AS_NODE
@@ -48,9 +55,9 @@ function reportProblem(where, err) {
   lastProblemDialogAt = Date.now();
   dialog.showMessageBox({
     type: 'error',
-    message: "Jack's Picker ran into a problem",
-    detail: 'The details were saved to its log. If this keeps happening, quit and reopen the app.',
-    buttons: ['OK', 'Show Log'],
+    message: tr("Jack's Picker ran into a problem"),
+    detail: tr('The details were saved to its log. If this keeps happening, quit and reopen the app.'),
+    buttons: [tr('OK'), tr('Show Log')],
     defaultId: 0,
   }).then(({ response }) => { if (response === 1) showLog(); }).catch(() => {});
 }
@@ -94,16 +101,20 @@ function setSaveDir(dir) {
   ANNOTATION_DIR = path.join(dir, '.annotations');
 }
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
+// The company logo for watermarks and guides: a PNG next to settings.json, not inside it
+// (settings.json is read often).
+const BRAND_LOGO_PATH = path.join(app.getPath('userData'), 'brand', 'logo.png');
 const DEFAULT_SHORTCUTS = {
   region: 'CommandOrControl+Shift+2',
   repeat: 'CommandOrControl+Alt+Shift+2',
   window: 'CommandOrControl+Alt+Shift+W',
   full: 'CommandOrControl+Shift+1',
+  text: 'CommandOrControl+Alt+Shift+T',   // copy the text in a region, no screenshot
 };
 // ⌘⇧3 / ⌘⇧4 / ⌘⇧5 are allowed too: they're macOS's screenshot keys, and macOS takes them first
 // until they're turned off in System Settings (the hotkey dialog explains and links there).
 const RECORDING_EXTS = new Set(['mp4', 'webm', 'gif']);
-const HUD_WIDTH = 530;
+const HUD_WIDTH = 557;
 const HUD_HEIGHT = 90;
 const HUD_COLLAPSED = 70;
 let hudCollapsed = false;
@@ -136,12 +147,21 @@ const HUD_SCALES = [0.85, 1, 1.2];
 const THUMB_SIZES = ['small', 'medium', 'large'];
 const GIF_FPS_OPTIONS = [10, 12, 15, 20];
 const GIF_WIDTH_OPTIONS = [480, 640, 800, 1200];
+const WATERMARK_KINDS = ['off', 'logo', 'name'];
+const CORNERS = ['tl', 'tr', 'bl', 'br'];
+const WATERMARK_SIZES = ['small', 'medium', 'large'];
+const STAMP_KINDS = ['none', 'confidential', 'internal', 'draft'];
+// The 📷 camera bubble in screen recordings (src/webcam.js draws it).
+const CAMERA_SIZES = ['small', 'medium', 'large'];
+const CAMERA_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const CAMERA_SHAPES = ['circle', 'rounded'];
+const AFTER_CAPTURE_OPTIONS = ['editor', 'thumbnail'];   // what a new capture opens
 const oneOf = (value, options, fallback) => (options.includes(value) ? value : fallback);
 const clampNumber = (value, min, max, fallback) => (Number.isFinite(+value) && value !== null && value !== '' ? Math.min(max, Math.max(min, +value)) : fallback);
 const plainObject = value => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
 
 function cleanPrefs(raw) {
-  const a = plainObject(raw.appearance), e = plainObject(raw.editor), r = plainObject(raw.recording);
+  const a = plainObject(raw.appearance), e = plainObject(raw.editor), r = plainObject(raw.recording), b = plainObject(raw.brand);
   return {
     appearance: {
       theme: oneOf(a.theme, THEMES, 'dark'),
@@ -150,6 +170,7 @@ function cleanPrefs(raw) {
       uiScale: oneOf(a.uiScale, UI_SCALES, 1),
       hudScale: oneOf(a.hudScale, HUD_SCALES, 1),
       thumbSize: oneOf(a.thumbSize, THUMB_SIZES, 'large'),
+      language: oneOf(a.language, ['system', ...Object.keys(i18n.LANGUAGES)], 'system'),
     },
     editor: {
       color: /^#[0-9a-f]{6}$/i.test(e.color) ? e.color.toUpperCase() : '#6C4EF6',
@@ -162,18 +183,101 @@ function cleanPrefs(raw) {
       mic: !!r.mic,
       gifFps: oneOf(r.gifFps, GIF_FPS_OPTIONS, 12),
       gifWidth: oneOf(r.gifWidth, GIF_WIDTH_OPTIONS, 800),
+      camera: !!r.camera,
+      cameraSize: oneOf(r.cameraSize, CAMERA_SIZES, 'medium'),
+      cameraCorner: oneOf(r.cameraCorner, CAMERA_CORNERS, 'bottom-right'),
+      cameraShape: oneOf(r.cameraShape, CAMERA_SHAPES, 'circle'),
+    },
+    // Company branding: the name heads exported guides; the logo (or name) can watermark captures.
+    brand: {
+      name: typeof b.name === 'string' ? b.name.trim().slice(0, 80) : '',
+      logo: Number.isFinite(b.logo) && b.logo > 0 ? b.logo : 0,   // when the logo file was saved; 0 = none
+      watermark: oneOf(b.watermark, WATERMARK_KINDS, 'off'),
+      watermarkCorner: oneOf(b.watermarkCorner, CORNERS, 'br'),
+      watermarkSize: oneOf(b.watermarkSize, WATERMARK_SIZES, 'medium'),
+      watermarkOpacity: clampNumber(b.watermarkOpacity, 0.2, 1, 0.6),
+      autoWatermark: !!b.autoWatermark,
+      stamp: oneOf(b.stamp, STAMP_KINDS, 'none'),
+      palette: (Array.isArray(b.palette) ? b.palette : [])
+        .filter(c => /^#[0-9a-f]{6}$/i.test(c)).map(c => c.toUpperCase()).slice(0, 8),
+      usePalette: !!b.usePalette,
     },
     autoCopyAfterCapture: !!raw.autoCopyAfterCapture,
+    searchText: raw.searchText !== false,   // index the text in screenshots for search
+    checkSensitive: !!raw.checkSensitive,   // look for emails, card numbers, keys… before sharing
+    afterCapture: oneOf(raw.afterCapture, AFTER_CAPTURE_OPTIONS, 'editor'),
   };
 }
 
+// ── Managed settings (IT) ──
+// An organization can fix some settings with a configuration profile (MDM) for the app's domain,
+// com.rindworks.jackspicker (keys and an example profile: README → Managed settings). macOS
+// includes managed values in the app's user defaults. Read as strings, which also tells "not
+// set" apart from false (a boolean reads as "1" or "0").
+const MANAGED_KEYS = {
+  CapturesFolder: 'string', CompanyName: 'string', Stamp: 'string',
+  CheckSensitiveInfo: 'bool', DisableTextSearch: 'bool', DisableSharing: 'bool', AutoCopyAfterCapture: 'bool',
+  DisableMicrophone: 'bool', DisableSystemAudio: 'bool', DisableCamera: 'bool',
+};
+
+// Read on every call: user defaults are an in-memory lookup, and a profile can change any time.
+function managedPolicy() {
+  if (process.platform !== 'darwin' || typeof systemPreferences.getUserDefault !== 'function') return {};
+  const policy = {};
+  for (const [key, kind] of Object.entries(MANAGED_KEYS)) {
+    let raw = '';
+    try { raw = systemPreferences.getUserDefault(key, 'string'); } catch {}
+    if (raw == null || raw === '') continue;
+    policy[key] = kind === 'bool' ? /^(1|true|yes)$/i.test(String(raw)) : String(raw).trim();
+  }
+  return policy;
+}
+
+// Overrides the user's choices with the organization's; `managed` tells the UI which to lock.
+function applyPolicy(settings, policy = managedPolicy()) {
+  const managed = {};
+  const force = (key, apply) => { apply(); managed[key] = true; };
+  if ('CheckSensitiveInfo' in policy) force('checkSensitive', () => { settings.checkSensitive = policy.CheckSensitiveInfo; });
+  if ('DisableTextSearch' in policy) force('searchText', () => { settings.searchText = !policy.DisableTextSearch; });
+  if ('AutoCopyAfterCapture' in policy) force('autoCopyAfterCapture', () => { settings.autoCopyAfterCapture = policy.AutoCopyAfterCapture; });
+  if (policy.DisableMicrophone) force('mic', () => { settings.recording.mic = false; });
+  if (policy.DisableSystemAudio) force('systemAudio', () => { settings.recording.systemAudio = false; });
+  if (policy.DisableCamera) force('camera', () => { settings.recording.camera = false; });
+  if (policy.CompanyName) force('companyName', () => { settings.brand.name = policy.CompanyName.slice(0, 80); });
+  if (STAMP_KINDS.includes(policy.Stamp)) force('stamp', () => { settings.brand.stamp = policy.Stamp; });
+  if (policy.DisableSharing) managed.sharing = true;
+  if (managedCapturesFolder()) managed.capturesFolder = true;
+  settings.managed = managed;
+  // Stamps, watermarks and the check before sharing are applied in the editor, so while any is
+  // on, captures open there rather than as a thumbnail (the choice returns when they're off).
+  const b = settings.brand;
+  settings.thumbnailUnavailable = !!(settings.checkSensitive || b.stamp !== 'none' || (b.autoWatermark && b.watermark !== 'off'));
+  if (settings.thumbnailUnavailable) settings.afterCapture = 'editor';
+  return settings;
+}
+
+// The folder IT set, if it can be used: ~ expanded, and in the App Store build only inside
+// Pictures (the sandbox can't write elsewhere without the user choosing the folder).
+function managedCapturesFolder() {
+  const raw = managedPolicy().CapturesFolder;
+  if (!raw) return null;
+  // The real home: inside the App Store sandbox os.homedir() is the app's container.
+  const home = IS_MAS ? os.userInfo().homedir : os.homedir();
+  const dir = path.resolve(raw.replace(/^~(?=$|\/)/, home));
+  if (IS_MAS && !dir.startsWith(path.join(home, 'Pictures') + path.sep)) return null;
+  return dir;
+}
+
 function appSettings() {
-  return {
-    ...cleanPrefs(readSettings()),
+  const prefs = cleanPrefs(readSettings());
+  if (prefs.brand.logo && !fs.existsSync(BRAND_LOGO_PATH)) prefs.brand.logo = 0;
+  return applyPolicy({
+    ...prefs,
     launchAtLogin: app.isPackaged && app.getLoginItemSettings().openAtLogin,
     launchAtLoginAvailable: app.isPackaged,   // a dev build would register the bare Electron binary
     capturesFolder: { path: SAVE_DIR, isDefault: SAVE_DIR === DEFAULT_SAVE_DIR, defaultPath: DEFAULT_SAVE_DIR },
-  };
+    sharing: sharingState(),   // "Send to…" destinations, credentials masked (see Send to… below)
+  });
 }
 
 function broadcastSettings(settings = appSettings()) {
@@ -189,11 +293,19 @@ function updateSettings(patch = {}) {
     appearance: { ...plainObject(raw.appearance), ...plainObject(patch.appearance) },
     editor: { ...plainObject(raw.editor), ...plainObject(patch.editor) },
     recording: { ...plainObject(raw.recording), ...plainObject(patch.recording) },
+    brand: { ...plainObject(raw.brand), ...plainObject(patch.brand) },
     autoCopyAfterCapture: 'autoCopyAfterCapture' in patch ? patch.autoCopyAfterCapture : raw.autoCopyAfterCapture,
+    searchText: 'searchText' in patch ? patch.searchText : raw.searchText,
+    checkSensitive: 'checkSensitive' in patch ? patch.checkSensitive : raw.checkSensitive,
+    afterCapture: 'afterCapture' in patch ? patch.afterCapture : raw.afterCapture,
   }));
   if ('launchAtLogin' in patch && app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!patch.launchAtLogin });
   const settings = appSettings();
   applyAppearance(settings);
+  if ('searchText' in patch) {
+    searchIndex.setEnabled(settings.searchText);
+    searchIndex.schedule(500);
+  }
   return broadcastSettings(settings);
 }
 
@@ -201,6 +313,7 @@ function updateSettings(patch = {}) {
 // editor and HUD scale with their own window zoom (file:// pages zoom independently).
 function applyAppearance({ appearance }) {
   nativeTheme.themeSource = appearance.theme;
+  i18n.setLanguage(appearance.language, app.getLocale());
   if (editorWin && !editorWin.isDestroyed()) {
     editorWin.webContents.setZoomFactor(appearance.uiScale);
     editorWin.setBackgroundColor(windowBackground());
@@ -216,6 +329,36 @@ function windowBackground() {
 }
 
 ipcMain.handle('settings-get', () => appSettings());
+
+// ── Brand logo ── (the file lives at BRAND_LOGO_PATH)
+const BRAND_LOGO_MAX = 1024;
+
+ipcMain.handle('brand-logo-choose', async e => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), {
+    title: tr('Choose your logo'),
+    properties: ['openFile'],
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'tif', 'tiff', 'heic', 'webp'] }],
+  });
+  if (canceled || !filePaths?.[0]) return null;
+  let img = nativeImage.createFromPath(filePaths[0]);
+  if (img.isEmpty()) return { error: 'That file isn’t an image Jack’s Picker can read.' };
+  const { width, height } = img.getSize();
+  const scale = Math.min(1, BRAND_LOGO_MAX / Math.max(width, height));
+  if (scale < 1) img = img.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: 'best' });
+  fs.mkdirSync(path.dirname(BRAND_LOGO_PATH), { recursive: true });
+  fs.writeFileSync(BRAND_LOGO_PATH, img.toPNG());
+  return updateSettings({ brand: { logo: Date.now() } });
+});
+
+ipcMain.handle('brand-logo-get', () => {
+  try { return `data:image/png;base64,${fs.readFileSync(BRAND_LOGO_PATH).toString('base64')}`; }
+  catch { return null; }
+});
+
+ipcMain.handle('brand-logo-remove', () => {
+  try { fs.unlinkSync(BRAND_LOGO_PATH); } catch {}
+  return updateSettings({ brand: { logo: 0 } });
+});
 ipcMain.handle('settings-set', (_e, patch) => updateSettings(patch));
 ipcMain.on('settings-open', () => openSettings());
 
@@ -242,6 +385,11 @@ let saveDirAccessStop = null;
 let pendingSaveDir = null;
 
 function restoreCapturesFolder() {
+  const managedDir = managedCapturesFolder();
+  if (managedDir) {
+    try { fs.mkdirSync(managedDir, { recursive: true }); setSaveDir(managedDir); return; }
+    catch (err) { logError('Managed captures folder', err); }
+  }
   const { saveDir, saveDirBookmark } = readSettings();
   if (!saveDir) return;
   if (IS_MAS && saveDirBookmark) {
@@ -290,9 +438,10 @@ function moveCaptures(fromDir, toDir) {
 }
 
 ipcMain.handle('captures-folder-choose', async () => {
+  if (managedCapturesFolder()) return { error: 'managed' };
   const { canceled, filePaths, bookmarks } = await dialog.showOpenDialog(editorWin, {
-    title: 'Choose where captures are saved',
-    buttonLabel: 'Use This Folder',
+    title: tr('Choose where captures are saved'),
+    buttonLabel: tr('Use This Folder'),
     properties: ['openDirectory', 'createDirectory'],
     securityScopedBookmarks: IS_MAS,
   });
@@ -308,6 +457,7 @@ ipcMain.handle('captures-folder-choose', async () => {
 
 // target: 'pending' (the folder just chosen) or 'default'; move: bring existing captures along.
 ipcMain.handle('captures-folder-apply', (_e, { target, move }) => {
+  if (managedCapturesFolder()) return { error: 'Your organization sets the captures folder.' };
   const next = target === 'default' ? { dir: DEFAULT_SAVE_DIR, bookmark: null } : pendingSaveDir;
   pendingSaveDir = null;
   if (!next) return null;
@@ -338,7 +488,35 @@ ipcMain.handle('captures-folder-count', () => {
 
 function captureFromShortcut(kind) {
   if (kind === 'repeat') return captureLastRegion();
+  if (kind === 'text') return captureText();
   return triggerCapture(kind);
+}
+
+// ── Copy text from the screen ──
+// Pick a region as for a screenshot; its text goes on the clipboard and nothing is saved.
+let textCaptureMode = false;
+
+function captureText() {
+  textCaptureMode = true;
+  return triggerCapture('region');
+}
+
+async function copyTextFromImage(dataURL, ocr = runOCR) {
+  showHUD();
+  const r = await ocr('text', dataURL);
+  const text = r?.success ? ocrItemsToText(r.items || []).trim() : '';
+  if (!text) {
+    flashHUD(r?.success ? tr('No text found there') : tr('Text recognition isn’t available'));
+    return '';
+  }
+  clipboard.writeText(text);
+  const lines = text.split('\n').length;
+  flashHUD(lines === 1 ? tr('Copied 1 line of text') : tr('Copied {n} lines of text', { n: lines }));
+  return text;
+}
+
+function flashHUD(text) {
+  if (hudWindow && !hudWindow.isDestroyed()) hudWindow.webContents.send('hud-flash', text);
 }
 
 function registerCaptureShortcuts() {
@@ -498,8 +676,8 @@ ipcMain.handle('project-folders', () => Object.fromEntries(Object.entries(projec
 ipcMain.handle('project-folder-link', async (_e, projectId) => {
   if (typeof projectId !== 'string' || !projectId) return null;
   const { canceled, filePaths, bookmarks } = await dialog.showOpenDialog(editorWin, {
-    title: 'Link a folder to this project',
-    buttonLabel: 'Link Folder',
+    title: tr('Link a folder to this project'),
+    buttonLabel: tr('Link Folder'),
     properties: ['openDirectory', 'createDirectory'],
     securityScopedBookmarks: IS_MAS,
   });
@@ -673,28 +851,29 @@ function createTray() {
 }
 
 function buildTrayMenu() {
-  const settings = readSettings();
+  const settings = appSettings();   // effective values (an organization may manage some)
   const shortcuts = readShortcuts();
   return Menu.buildFromTemplate([
-    { label: "Jack's Picker", enabled: false },
+    { label: tr("Jack's Picker"), enabled: false },
     { type: 'separator' },
-    { label: 'Capture Region',      accelerator: shortcuts.region, click: () => triggerCapture('region') },
-    { label: 'Repeat Last Region',  accelerator: shortcuts.repeat, enabled: !!lastRegionRect, click: captureLastRegion },
-    { label: 'Capture Window',      accelerator: shortcuts.window, click: () => triggerCapture('window') },
-    { label: 'Capture Full Screen', accelerator: shortcuts.full, click: () => triggerCapture('full') },
-    { label: 'Delayed Full Screen (5s)', click: () => delayedCapture('full', 5000) },
-    { label: 'Auto-copy After Capture', type: 'checkbox', checked: !!settings.autoCopyAfterCapture, click: item => updateSettings({ autoCopyAfterCapture: item.checked }) },
+    { label: tr('Capture Region'),      accelerator: shortcuts.region, click: () => triggerCapture('region') },
+    { label: tr('Repeat Last Region'),  accelerator: shortcuts.repeat, enabled: !!lastRegionRect, click: captureLastRegion },
+    { label: tr('Capture Window'),      accelerator: shortcuts.window, click: () => triggerCapture('window') },
+    { label: tr('Capture Full Screen'), accelerator: shortcuts.full, click: () => triggerCapture('full') },
+    { label: tr('Copy Text from Screen'), accelerator: shortcuts.text, click: () => captureText() },
+    { label: tr('Delayed Full Screen (5s)'), click: () => delayedCapture('full', 5000) },
+    { label: tr('Auto-copy After Capture'), type: 'checkbox', checked: !!settings.autoCopyAfterCapture, enabled: !settings.managed.autoCopyAfterCapture, click: item => updateSettings({ autoCopyAfterCapture: item.checked }) },
     { type: 'separator' },
-    { label: 'Show / Hide HUD', click: toggleHUD },
-    { label: 'Open Captures Folder', click: () => shell.openPath(SAVE_DIR) },
+    { label: tr('Show / Hide HUD'), click: toggleHUD },
+    { label: tr('Open Captures Folder'), click: () => shell.openPath(SAVE_DIR) },
     { type: 'separator' },
     // Off by default: App Review requires the user to opt in to launching at login.
     // Disabled in dev so the bare Electron binary doesn't get registered.
-    { label: 'Launch at Login', type: 'checkbox', enabled: app.isPackaged, checked: app.getLoginItemSettings().openAtLogin, click: item => updateSettings({ launchAtLogin: item.checked }) },
-    { label: 'Settings…', click: () => openSettings() },
-    { label: "About Jack's Picker", click: showAbout },
+    { label: tr('Launch at Login'), type: 'checkbox', enabled: app.isPackaged, checked: app.getLoginItemSettings().openAtLogin, click: item => updateSettings({ launchAtLogin: item.checked }) },
+    { label: tr('Settings…'), click: () => openSettings() },
+    { label: tr("About Jack's Picker"), click: showAbout },
     { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() },
+    { label: tr('Quit'), click: () => app.quit() },
   ]);
 }
 
@@ -825,11 +1004,11 @@ function maybeShowScreenPermissionHelp() {
   if (status === 'denied' || status === 'restricted' || status === 'not-determined') {
     dialog.showMessageBox({
       type: 'warning',
-      buttons: ['Open Settings', 'OK'],
+      buttons: [tr('Open Settings'), tr('OK')],
       defaultId: 0,
       cancelId: 1,
-      message: 'Screen Recording permission is needed',
-      detail: "If captures show only the desktop background, allow Jack's Picker in System Settings → Privacy & Security → Screen & System Audio Recording, then restart the app.",
+      message: tr('Screen Recording permission is needed'),
+      detail: tr("If captures show only the desktop background, allow Jack's Picker in System Settings → Privacy & Security → Screen & System Audio Recording, then restart the app."),
     }).then(({ response }) => {
       if (response === 0) {
         shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
@@ -845,17 +1024,18 @@ function showFirstRunOnboarding() {
   writeSettings({ onboardingSeen: true });
   const isMac = process.platform === 'darwin';
   const permissionNote = isMac
-    ? 'Enable Screen Recording permission if captures show only the desktop background.'
-    : 'If captures are blank, allow screen capture in Windows Settings → Privacy & Security → Screen capture.';
+    ? tr('Enable Screen Recording permission if captures show only the desktop background.')
+    : tr('If captures are blank, allow screen capture in Windows Settings → Privacy & Security → Screen capture.');
   dialog.showMessageBox({
     type: 'info',
-    buttons: isMac ? ['Open Screen Settings', 'Start Using'] : ['Start Using'],
+    buttons: isMac ? [tr('Open Screen Settings'), tr('Start Using')] : [tr('Start Using')],
     defaultId: isMac ? 1 : 0,
     cancelId: isMac ? 1 : 0,
-    message: "Welcome to Jack's Picker",
+    message: tr("Welcome to Jack's Picker"),
     detail: [
-      `Use the ${isMac ? 'menu bar' : 'system tray'} icon for region, window, full-screen, delayed, and repeat-region captures.`,
-      'Use the editor sidebar for history, search, pins, rename, reveal, and delete.',
+      isMac ? tr('Use the menu bar icon for region, window, full-screen, delayed, and repeat-region captures.')
+        : tr('Use the system tray icon for region, window, full-screen, delayed, and repeat-region captures.'),
+      tr('Use the editor sidebar for history, search, pins, rename, reveal, and delete.'),
       permissionNote,
     ].join('\n\n'),
   }).then(({ response }) => {
@@ -880,11 +1060,15 @@ async function triggerCapture(mode) {
   }
 }
 
-function finishCapture(dataURL, rect = null) {
+// display: the one the capture came from, where a thumbnail appears (default: the cursor's).
+function finishCapture(dataURL, rect = null, display = null) {
   const { filePath } = autoSave(dataURL);
-  if (readSettings().autoCopyAfterCapture) {
+  // The check before sharing can't vet a raw capture, so auto-copy waits while it's on.
+  const prefs = appSettings();
+  if (prefs.autoCopyAfterCapture && !prefs.checkSensitive) {
     try { clipboard.writeImage(nativeImage.createFromDataURL(dataURL)); } catch {}
   }
+  if (prefs.afterCapture === 'thumbnail') return showCaptureThumbnail(dataURL, filePath, display);
   openEditor(dataURL, rect, filePath);
 }
 
@@ -898,7 +1082,7 @@ async function captureFullScreen() {
   let dataURL = await capturePrimaryScreen();
   if (!dataURL) dataURL = await runScreencapture(['-x']);
   if (!dataURL) { showHUD(); return; }
-  finishCapture(dataURL);
+  finishCapture(dataURL, null, screen.getPrimaryDisplay());
 }
 
 async function captureActiveWindow() {
@@ -988,7 +1172,7 @@ async function captureLastRegion() {
     width: Math.max(1, Math.round(lastRegionRect.w)),
     height: Math.max(1, Math.round(lastRegionRect.h)),
   }).toDataURL();
-  finishCapture(cropped, lastRegionRect);
+  finishCapture(cropped, lastRegionRect, display);
 }
 
 async function openRegionOverlay() {
@@ -1043,7 +1227,8 @@ async function openRegionOverlay() {
 
 function autoSave(imageDataURL) {
   const ts       = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-  const filename = `screenshot-${ts}.png`;
+  // Two captures within a second (easy with thumbnails) get -2, -3… rather than overwriting.
+  const filename = uniqueFileIn(SAVE_DIR, `screenshot-${ts}.png`);
   const filePath = path.join(SAVE_DIR, filename);
   const data     = imageDataURL.replace(/^data:image\/\w+;base64,/, '');
   fs.writeFileSync(filePath, Buffer.from(data, 'base64'));
@@ -1083,6 +1268,55 @@ function createEditorWindow() {
     showHUD();
   });
   return editorWin;
+}
+
+// ── Quick access: thumbnail after a capture, Pin to Screen ────────────────────
+// The windows and their IPC live in lib/quick-access.cjs. Main decides when a thumbnail appears
+// and which files may be pinned.
+const { createQuickAccess } = require('./lib/quick-access.cjs');
+
+const quickAccess = createQuickAccess({
+  electron: { BrowserWindow, ipcMain, screen, clipboard, nativeImage },
+  preload: path.join(__dirname, 'preload.cjs'),
+  pagesDir: path.join(__dirname, 'src'),
+  windowBackground,
+  pinnableImagePath,
+  openInEditor: openCaptureInEditor,
+  logError,
+});
+
+// Settings → Capture → After a capture → Show a thumbnail. The capture is already saved (and
+// copied, with auto-copy on). With no editor coming up, the HUD returns without taking focus, and
+// an open editor's Recents is told about the new capture.
+function showCaptureThumbnail(dataURL, filePath, display) {
+  try {
+    quickAccess.showThumbnail({ dataURL, filePath, display });
+  } catch (err) {
+    logError('Capture thumbnail', err);
+    openEditor(dataURL, null, filePath);
+    return;
+  }
+  if (hudWindow && !hudWindow.isDestroyed() && !hudWindow.isVisible()) hudWindow.showInactive();
+  if (editorWin && !editorWin.isDestroyed()) editorWin.webContents.send('captures-changed');
+}
+
+// The thumbnail's Edit (or a click on it): the capture opens as it would have straight after capture.
+function openCaptureInEditor(filePath) {
+  const image = nativeImage.createFromPath(filePath);
+  if (image.isEmpty()) return false;
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  if (editorWin && !editorWin.isDestroyed()) editorWin.show();
+  openEditor(image.toDataURL(), null, filePath);
+  return true;
+}
+
+// A capture is pinned as Recents shows it: annotated, when it has annotations. An image in a
+// linked project folder is pinned as it is.
+function pinnableImagePath(filePath) {
+  const capture = safeCapturePath(filePath);
+  if (!capture) return safeCapturePath(filePath, { allowLinked: true });
+  const flat = flatAnnotationPathFor(capture);
+  return fs.existsSync(flat) ? flat : capture;
 }
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
@@ -1177,10 +1411,30 @@ ipcMain.on('open-mic-settings', () => {
   else if (process.platform === 'win32') shell.openExternal('ms-settings:privacy-microphone');
 });
 
+// ── Camera bubble (📷) ────────────────────────────────────────────────────────
+// The HUD's 📷 toggle and Settings → Recording ask here when the camera is switched on, like the
+// microphone: macOS asks the user once; afterwards the answer comes from System Settings.
+ipcMain.handle('camera-access', async () => {
+  if (process.platform !== 'darwin') return true;
+  try {
+    const status = systemPreferences.getMediaAccessStatus('camera');
+    if (status === 'granted') return true;
+    if (status === 'not-determined') return await systemPreferences.askForMediaAccess('camera');
+  } catch (err) {
+    logError('Camera access', err);
+  }
+  return false;
+});
+
+ipcMain.on('open-camera-settings', () => {
+  if (process.platform === 'darwin') shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Camera');
+  else if (process.platform === 'win32') shell.openExternal('ms-settings:privacy-webcam');
+});
+
 // Scrolling capture: the HUD stitches frames and sends back the tall image (or null if cancelled).
 ipcMain.on('scroll-capture-done', (_e, imageDataURL) => {
   endStreamSession();
-  if (imageDataURL) finishCapture(imageDataURL);
+  if (imageDataURL) finishCapture(imageDataURL, null, regionDisplay);
   else showHUD();
 });
 
@@ -1235,16 +1489,22 @@ ipcMain.on('capture-done', (_e, { imageDataURL, rect }) => {
     return;
   }
   closeCaptureWin();
+  if (textCaptureMode) {
+    textCaptureMode = false;
+    copyTextFromImage(imageDataURL);
+    return;
+  }
   if (rect) {
     lastRegionRect = rect;
     lastRegionDisplayId = regionDisplay?.id ?? null;
   }
-  finishCapture(imageDataURL, rect);
+  finishCapture(imageDataURL, rect, regionDisplay);
 });
 
 function cancelCapture() {
   closeCaptureWin();
   streamMode = null;
+  textCaptureMode = false;
   restoreEditorAfterStream();
   showHUD();
 }
@@ -1301,6 +1561,92 @@ ipcMain.handle('share-image', async (event, { imageDataURL, filename }) => {
   } catch { return { success: false }; }
 });
 
+// ── Send to… (team sharing) ───────────────────────────────────────────────────
+// Opt-in destinations (S3-compatible storage, Slack, Jira, Linear, Teams, GitHub) set up in
+// Settings → Sharing; lib/sharing does the work. Nothing goes over the network until a
+// destination is saved and then tested or used. Credentials are encrypted with safeStorage (a
+// Keychain key) before they're written to settings.json, and pages only ever get masked values.
+const { net, safeStorage } = require('electron');
+const { createSharing, SharingError } = require('./lib/sharing/index.cjs');
+
+const sharing = createSharing({
+  read: () => readSettings().sharing,
+  write: value => writeSettings({ sharing: value }),
+  safeStorage,
+  fetch: (url, init) => net.fetch(url, init),   // Chromium's stack: the Mac's proxy settings and certificates
+  isOnline: () => net.isOnline(),
+  logError,
+});
+
+// The one switch for sharing: every sharing entry point checks it, and pages hide the Sharing
+// settings and "Send to…" menus when it's off. IT can turn it off with a configuration profile
+// for com.rindworks.jackspicker that sets SharingDisabled to true.
+// IT can turn Send to… off with a configuration profile (DisableSharing, see managedPolicy).
+function sharingAllowed() {
+  return !managedPolicy().DisableSharing;
+}
+
+// Part of appSettings(), so pages learn about changes with every settings broadcast.
+function sharingState() {
+  return sharingAllowed() ? { allowed: true, destinations: sharing.list() } : { allowed: false, destinations: [] };
+}
+
+// Every sharing request from a page: the switch first, then { ok: false, error } instead of a throw.
+async function sharingCall(work) {
+  if (!sharingAllowed()) return { ok: false, error: 'Sharing is turned off on this Mac.' };
+  try {
+    return { ok: true, ...(await work()) };
+  } catch (err) {
+    if (err instanceof SharingError) return { ok: false, error: err.message, field: err.field, url: err.url };
+    logError('Sharing', err);
+    return { ok: false, error: 'Something went wrong. The details are in the diagnostic log.' };
+  }
+}
+
+// The annotated image when there is one (.annotations/<name>.flat.png), else the capture itself.
+function captureForSharing(filePath) {
+  const safePath = safeCapturePath(filePath);
+  if (!safePath || !fs.existsSync(safePath)) throw new SharingError('Only screenshots in the captures folder can be sent.');
+  const flat = flatAnnotationPathFor(safePath);
+  const source = fs.existsSync(flat) ? flat : safePath;
+  const png = source === flat || /\.png$/i.test(safePath);
+  return {
+    bytes: fs.readFileSync(source),
+    filename: path.basename(safePath).replace(IMAGE_EXT, png ? '.png' : '.jpg'),
+    contentType: png ? 'image/png' : 'image/jpeg',
+  };
+}
+
+ipcMain.handle('sharing-save', (_e, draft) => sharingCall(() => {
+  const destination = sharing.save(draft);
+  broadcastSettings();
+  return { destination };
+}));
+
+ipcMain.handle('sharing-remove', (_e, id) => sharingCall(() => {
+  sharing.remove(id);
+  broadcastSettings();
+  return {};
+}));
+
+ipcMain.handle('sharing-test', (_e, draft) => sharingCall(() => sharing.test(draft)));
+
+ipcMain.handle('sharing-send', (event, request) => sharingCall(async () => {
+  const { id, filePath, title, description, message, jobId } = plainObject(request);
+  const progress = text => { if (!event.sender.isDestroyed()) event.sender.send('sharing-progress', { jobId, text }); };
+  const result = await sharing.send(id, captureForSharing(filePath), { title, description, message }, progress);
+  if (result.copy) clipboard.writeText(result.url);
+  return { url: result.url, label: result.label, copied: !!result.copy, expires: result.expires || null };
+}));
+
+// "Open" / "Copy Link" on a result toast; only links a send produced in this session.
+ipcMain.on('sharing-link', (_e, request) => {
+  const { url, action } = plainObject(request);
+  if (!sharingAllowed() || !sharing.isResultLink(url)) return;
+  if (action === 'copy') clipboard.writeText(url);
+  else shell.openExternal(url);
+});
+
 function runOCRHelper(helper, tmp) {
   const [cmd, args] = process.platform === 'win32'
     ? ['powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helper, tmp]]
@@ -1312,6 +1658,62 @@ function runOCRHelper(helper, tmp) {
     });
   });
 }
+
+// ── Search index ──
+// The text in every screenshot, for the gallery search (see lib/search-index.cjs).
+const searchIndex = createSearchIndex({
+  file: path.join(app.getPath('userData'), 'search-index.json'),
+  listImages: () => {
+    let names = [];
+    try { names = fs.readdirSync(SAVE_DIR).filter(isImageFile); } catch {}
+    return names
+      .map(name => ({ name, path: path.join(SAVE_DIR, name) }))
+      .map(img => ({ ...img, time: captureTime(img.path) }))
+      .sort((a, b) => b.time - a.time);
+  },
+  // The annotated copy when there is one, so text typed in annotations is findable too.
+  sourceFor: filePath => {
+    const flat = flatAnnotationPathFor(filePath);
+    return fs.existsSync(flat) ? flat : filePath;
+  },
+  readText: ocrTextOfFile,
+  logError,
+});
+
+// The helper reads a temp copy: inside the App Store sandbox it can't always reach a captures
+// folder the user chose (the app's access to it isn't passed on to child processes).
+async function ocrTextOfFile(src) {
+  const helper = ocrHelperPath('text');
+  if (!fs.existsSync(helper)) return '';
+  const tmp = path.join(os.tmpdir(), `jqg-index-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${path.extname(src) || '.png'}`);
+  fs.copyFileSync(src, tmp);
+  try { return ocrItemsToText(JSON.parse(await runOCRHelper(helper, tmp) || '[]')); }
+  finally { try { fs.unlinkSync(tmp); } catch {} }
+}
+
+// macOS returns lines; the Windows helper returns words tagged with their line (obsId).
+function ocrItemsToText(items) {
+  if (!items.some(i => i.obsId !== undefined)) return items.map(i => i.text).join('\n');
+  const lines = new Map();
+  items.forEach(i => lines.set(i.obsId, [...(lines.get(i.obsId) || []), i.text]));
+  return [...lines.values()].map(words => words.join(' ')).join('\n');
+}
+
+const SEARCH_RESULT_LIMIT = 60;
+// Every capture whose name or text matches, newest first (not just the gallery's recent ones).
+ipcMain.handle('gallery-search', async (_e, query) => {
+  let names = [];
+  try { names = fs.readdirSync(SAVE_DIR).filter(f => isImageFile(f) || MEDIA_EXT.test(f)); } catch {}
+  const hits = searchIndex.search(String(query || ''), names)
+    .map(hit => ({ ...hit, filePath: path.join(SAVE_DIR, hit.name) }))
+    .map(hit => ({ ...hit, time: captureTime(hit.filePath) }))
+    .sort((a, b) => b.time - a.time)
+    .slice(0, SEARCH_RESULT_LIMIT);
+  const items = await Promise.all(hits.map(async hit => ({ ...(await galleryPayload(hit.filePath)), time: hit.time, snippet: hit.snippet })));
+  return { items, ...searchIndex.status() };
+});
+
+ipcMain.handle('search-status', () => searchIndex.status());
 
 async function runOCR(kind, imageDataURL) {
   if (process.platform !== 'darwin' && process.platform !== 'win32')
@@ -1379,6 +1781,7 @@ const GALLERY_RECENT_LIMIT = 30;
 // `include` lists captures the renderer always needs regardless of age (pinned or
 // assigned to a project), since those live in renderer localStorage.
 ipcMain.handle('gallery-list', async (_e, include = []) => {
+  searchIndex.schedule(3000);   // the gallery reloads after captures, renames, deletes and moves
   try {
     const all = fs.readdirSync(SAVE_DIR)
       .filter(f => isImageFile(f) || MEDIA_EXT.test(f))
@@ -1590,10 +1993,13 @@ function writeAnnotationBundle({ filePath, anns, canvasSize, flatDataURL }) {
 
 ipcMain.on('annotation-save', (_e, data) => {
   writeAnnotationBundle(data);
+  searchIndex.schedule(4000);   // the annotated copy changed; wait for edits to settle
 });
 
 ipcMain.handle('annotation-save-now', (_e, data) => {
-  return { success: writeAnnotationBundle(data) };
+  const success = writeAnnotationBundle(data);
+  searchIndex.schedule(4000);
+  return { success };
 });
 
 ipcMain.on('ondragstart', (event, filePath) => {
@@ -1628,6 +2034,102 @@ ipcMain.on('ondragstart-annotated', (event, filePath) => {
     const icon = nativeImage.createFromPath(dragPath).resize({ width: 64, height: 64 });
     event.sender.startDrag({ file: dragPath, icon });
   } catch {}
+});
+
+// ── Create Guide ──────────────────────────────────────────────────────────────
+// Screenshots selected in Recents become a step-by-step guide: a PDF, or a folder with
+// index.html (or guide.md) and the images. lib/guide.cjs builds the pages and writes the files;
+// this part checks the paths the editor sends, picks each step's image and asks where to save.
+// GIFs and recordings are left out: a guide is made of still screenshots.
+const guide = require('./lib/guide.cjs');
+
+// A step shows the annotated copy (.annotations/<name>.flat.png) when there is one. Images in a
+// linked project folder have no annotations here, so they're used as they are.
+function guideImageFor(imagePath) {
+  const capture = safeCapturePath(imagePath);
+  const flat = capture ? flatAnnotationPathFor(capture) : null;
+  return flat && fs.existsSync(flat) ? flat : imagePath;
+}
+
+// Brand presets (a separate feature) plug in here: return { name, logoPath } and the guide's
+// header shows that logo and name (see guideHeader in lib/guide.cjs).
+// Settings → Brand: the company name and logo head each guide.
+function guideBrand() {
+  const { name, logo } = appSettings().brand;
+  const logoPath = logo && fs.existsSync(BRAND_LOGO_PATH) ? BRAND_LOGO_PATH : null;
+  return name || logoPath ? { name, logoPath } : null;
+}
+
+// Screenshots from the captures folder or a linked project folder, and a count of what was left out.
+function guideScreenshots(filePaths) {
+  const images = [];
+  const skipped = { media: 0, missing: 0 };
+  for (const fp of (Array.isArray(filePaths) ? filePaths : []).slice(0, guide.MAX_STEPS)) {
+    const image = safeCapturePath(fp, { allowLinked: true });
+    if (image && fs.existsSync(image)) images.push(image);
+    else if (!image && safeCapturePath(fp, { allowMedia: true, allowLinked: true })) skipped.media++;
+    else skipped.missing++;
+  }
+  return { images, skipped };
+}
+
+function guideThumb(imagePath) {
+  try {
+    const img = nativeImage.createFromPath(imagePath);
+    if (img.isEmpty()) return null;
+    const { width, height } = img.getSize();
+    const scale = Math.min(1, 240 / width, 160 / height);
+    return img.resize({ width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) }).toDataURL();
+  } catch { return null; }
+}
+
+// The dialog's starting point: the steps it can use (with the image each one will show) and
+// the format and numbering used last time.
+ipcMain.handle('guide-prepare', (_e, filePaths) => {
+  const { images, skipped } = guideScreenshots(filePaths);
+  return {
+    steps: images.map(filePath => {
+      const image = guideImageFor(filePath);
+      return { filePath, name: path.basename(filePath).replace(/\.[^.]+$/, ''), thumb: guideThumb(image), annotated: image !== filePath };
+    }),
+    skipped,
+    prefs: guide.cleanGuidePrefs(readSettings().guide),
+  };
+});
+
+// request: { title, format: 'pdf'|'html'|'md', numbered, steps: [{ filePath, caption }] }
+ipcMain.handle('guide-export', async (event, request) => {
+  const req = guide.cleanGuideRequest(request);
+  if (!req) return { success: false, error: 'There’s nothing to put in the guide.' };
+  const steps = [];
+  for (const step of req.steps) {
+    const image = safeCapturePath(step.filePath, { allowLinked: true });
+    if (image && fs.existsSync(image)) steps.push({ caption: step.caption, imagePath: guideImageFor(image) });
+  }
+  if (!steps.length) return { success: false, error: 'Those screenshots can’t be found.' };
+  const pdf = req.format === 'pdf';
+  const { canceled, filePath } = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender) || editorWin, {
+    title: tr('Save Guide'),
+    defaultPath: guide.guideFileName(req.title) + (pdf ? '.pdf' : ''),
+    filters: pdf ? [{ name: 'PDF Document', extensions: ['pdf'] }] : [],
+    ...(pdf ? {} : { message: tr('The guide is saved as a folder with {file} and the images.', { file: req.format === 'md' ? 'guide.md' : 'index.html' }) }),
+    properties: ['createDirectory', 'showOverwriteConfirmation'],
+  });
+  if (canceled || !filePath) return { canceled: true };
+  try {
+    const out = await guide.writeGuide({
+      ...req, steps, outPath: filePath, brand: guideBrand(),
+      date: new Date().toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' }),
+      pageSize: guide.pageSizeFor(app.getLocaleCountryCode?.()),
+      BrowserWindow, trashItem: p => shell.trashItem(p),
+    });
+    writeSettings({ guide: { format: req.format, numbered: req.numbered } });
+    shell.showItemInFolder(out.reveal);
+    return { success: true, path: out.path, count: steps.length, skipped: req.steps.length - steps.length };
+  } catch (err) {
+    logError('Create guide', err);
+    return { success: false, error: err.message };
+  }
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1674,8 +2176,8 @@ app.on('render-process-gone', (_e, contents, details) => {
   if (win === editorWin) {
     dialog.showMessageBox(win, {
       type: 'warning',
-      message: 'The editor stopped unexpectedly',
-      detail: 'It has been reopened. Your saved captures are not affected.',
+      message: tr('The editor stopped unexpectedly'),
+      detail: tr('It has been reopened. Your saved captures are not affected.'),
     }).catch(() => {});
   }
 });
@@ -1694,6 +2196,7 @@ ipcMain.on('show-log', () => showLog());
 app.whenReady().then(() => {
   restoreCapturesFolder();
   nativeTheme.themeSource = appSettings().appearance.theme;
+  i18n.setLanguage(appSettings().appearance.language, app.getLocale());
   migrateLegacySaveDir();
   fs.mkdirSync(SAVE_DIR, { recursive: true });
   fs.mkdirSync(ANNOTATION_DIR, { recursive: true });
@@ -1710,6 +2213,9 @@ app.whenReady().then(() => {
   createTray();
   createHUD();
   registerCaptureShortcuts();
+  // Catch up on captures made since the last run once the app has settled.
+  searchIndex.setEnabled(appSettings().searchText);
+  searchIndex.schedule(8000);
 });
 
 app.on('window-all-closed', e => e.preventDefault());

@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   recordingStopped:   ()    => ipcRenderer.send('recording-stopped'),
   micAccess:          ()    => ipcRenderer.invoke('mic-access'),
   openMicSettings:    ()    => ipcRenderer.send('open-mic-settings'),
+  cameraAccess:       ()    => ipcRenderer.invoke('camera-access'),
+  openCameraSettings: ()    => ipcRenderer.send('open-camera-settings'),
   openKeyboardSettings: ()  => ipcRenderer.send('open-keyboard-settings'),
   scrollCaptureDone:  (dataURL) => ipcRenderer.send('scroll-capture-done', dataURL),
 
@@ -73,6 +75,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOpenSettings:       (cb)     => ipcRenderer.on('open-settings', (_e, section) => cb(section)),
   openSettings:         ()       => ipcRenderer.send('settings-open'),
   showLog:              ()       => ipcRenderer.send('show-log'),
+  brandLogoChoose:      ()       => ipcRenderer.invoke('brand-logo-choose'),
+  brandLogoGet:         ()       => ipcRenderer.invoke('brand-logo-get'),
+  brandLogoRemove:      ()       => ipcRenderer.invoke('brand-logo-remove'),
+  gallerySearch:        (query)  => ipcRenderer.invoke('gallery-search', query),
+  onHudFlash:           (cb)     => ipcRenderer.on('hud-flash', (_e, text) => cb(text)),
+  searchStatus:         ()       => ipcRenderer.invoke('search-status'),
   capturesFolderChoose: ()       => ipcRenderer.invoke('captures-folder-choose'),
   capturesFolderApply:  (data)   => ipcRenderer.invoke('captures-folder-apply', data),
   capturesFolderReveal: ()       => ipcRenderer.send('captures-folder-reveal'),
@@ -90,4 +98,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startDrag:          (filePath)  => ipcRenderer.send('ondragstart', filePath),
   startDragComposite: (data)      => ipcRenderer.send('ondragstart-composite', data),
   startDragAnnotated: (filePath)  => ipcRenderer.send('ondragstart-annotated', filePath),
+
+  // Create Guide
+  guidePrepare: (filePaths) => ipcRenderer.invoke('guide-prepare', filePaths),
+  guideExport:  (data)      => ipcRenderer.invoke('guide-export', data),
+  // Quick access: the thumbnail after a capture and images pinned to the screen (lib/quick-access.cjs)
+  onThumbnailData:   (cb)     => ipcRenderer.on('thumbnail-data', (_e, data) => cb(data)),
+  thumbnailAction:   (action) => ipcRenderer.send('thumbnail-action', action),   // 'copy' | 'edit' | 'pin' | 'close' | 'dismiss'
+  thumbnailDrag:     ()       => ipcRenderer.send('thumbnail-drag'),
+  pinImage:          (source) => ipcRenderer.invoke('pin-open', source),        // { filePath } or { dataURL }
+  onPinData:         (cb)     => ipcRenderer.on('pin-data', (_e, data) => cb(data)),
+  pinMove:           (move)   => ipcRenderer.send('pin-move', move),            // { phase, dx, dy }
+  pinZoom:           (zoom)   => ipcRenderer.send('pin-zoom', zoom),            // { factor, x, y }
+  pinOpacity:        (value)  => ipcRenderer.send('pin-opacity', value),
+  pinClose:          ()       => ipcRenderer.send('pin-close'),
+  onCapturesChanged: (cb)     => ipcRenderer.on('captures-changed', () => cb()),
+  // Sharing ("Send to…"). The destinations come with the settings (settings.sharing), with
+  // credentials masked; nothing here ever returns a secret.
+  sharingSave:       (draft) => ipcRenderer.invoke('sharing-save', draft),
+  sharingRemove:     (id)    => ipcRenderer.invoke('sharing-remove', id),
+  sharingTest:       (draft) => ipcRenderer.invoke('sharing-test', draft),
+  sharingSend:       (data)  => ipcRenderer.invoke('sharing-send', data),
+  sharingLink:       (data)  => ipcRenderer.send('sharing-link', data),
+  onSharingProgress: (cb)    => ipcRenderer.on('sharing-progress', (_e, progress) => cb(progress)),
 });

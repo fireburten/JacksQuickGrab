@@ -21,3 +21,6 @@ bin/
 
 # Apple provisioning profiles (download from developer.apple.com)
 build/*.provisionprofile
+
+# Temporary git worktrees used by Claude Code agents
+.claude/worktrees/

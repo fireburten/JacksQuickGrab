@@ -1,0 +1,118 @@
+/* "Send to…" sharing: Settings → Sharing (src/settings-sharing.js) and the editor's submenu, form
+   and result toast (src/sharing.js). Colours come from the theme tokens in theme.css, so it
+   follows Dark / Light / high contrast and the accent colour. */
+[data-sharing][hidden] { display: none !important; }
+
+/* ── Settings → Sharing ── */
+.jp-share-intro { margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: var(--fg-muted); }
+.jp-share-empty {
+  padding: 14px; border-radius: 10px; border: 1px dashed var(--line-strong);
+  font-size: 12px; color: var(--fg-muted); text-align: center;
+}
+.jp-share-row {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  padding: 12px 0; border-top: 1px solid var(--line);
+}
+.jp-share-row:first-of-type { border-top: 0; }
+.jp-share-main { min-width: 0; }
+.jp-share-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.jp-share-kind {
+  margin-left: 8px; padding: 1px 7px; border-radius: 6px; font-size: 10px; font-weight: 600; white-space: nowrap;
+  color: var(--fg-muted); background: rgba(var(--ink), calc(.06 * var(--ink-boost)));
+}
+.jp-share-main .sp-hint { overflow-wrap: anywhere; }
+.jp-share-row-buttons { flex-shrink: 0; }
+.jp-share-status { margin-top: 6px; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.jp-share-status.busy { color: var(--fg-muted); }
+.jp-share-status.ok { color: rgb(var(--ok-text-rgb)); }
+.jp-share-status.warn, .jp-share-warn { color: rgb(var(--warn-text-rgb)); }
+.jp-share-add { justify-content: flex-start; margin-top: 12px; }
+.jp-share-note { margin: 10px 0 0; }
+.jp-share-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.jp-share-kind-card {
+  display: flex; flex-direction: column; gap: 4px; padding: 11px 12px; border-radius: 10px; text-align: left;
+  border: 1px solid var(--line-strong); background: rgba(var(--ink), calc(.04 * var(--ink-boost)));
+  color: var(--fg); font: inherit; cursor: pointer;
+}
+.jp-share-kind-card:hover:not(:disabled) { border-color: rgba(var(--accent-rgb), .6); background: rgba(var(--accent-rgb), .12); }
+.jp-share-kind-card:disabled { cursor: default; opacity: .6; }
+.jp-share-kind-name { font-size: 13px; font-weight: 600; }
+.jp-share-kind-about { font-size: 11px; line-height: 1.4; color: var(--fg-muted); }
+.jp-share-form-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.jp-share-form-buttons { justify-content: flex-start; margin-top: 14px; }
+.jp-share-input {
+  width: 250px; max-width: 100%; height: 30px; padding: 0 9px; border-radius: 7px;
+  border: 1px solid var(--line-strong); background: var(--bg-input); color: var(--fg);
+  font: 12px inherit; outline: none;
+}
+.jp-share-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .25); }
+.jp-share-input.invalid { border-color: rgb(var(--danger-text-rgb)); }
+.jp-share-input::placeholder { color: var(--fg-faint); }
+select.jp-share-input { padding-right: 4px; }
+
+/* ── Editor: the Send to… submenu (Export menu, Recents right-click) ── */
+#btn-send-to { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+#btn-send-to::after { content: '›'; font-size: 14px; line-height: 1; opacity: .7; }
+.jp-send-menu { z-index: 820; min-width: 210px; }
+.jp-send-menu .jp-send-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.jp-send-menu button:disabled { cursor: default; opacity: .55; }
+.jp-send-menu button:disabled:hover { background: transparent; }
+.jp-send-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jp-send-kind { flex-shrink: 0; font-weight: 500; font-size: 10px; color: var(--fg-faint); }
+.jp-send-note { padding: 6px 9px; font-size: 11px; color: var(--fg-muted); }
+.jp-send-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+
+/* ── Editor: the form for issues and messages ── */
+.jp-send-backdrop { z-index: 910; }
+.jp-send-box { width: min(420px, calc(100vw - 32px)); }
+.jp-send-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.jp-send-head h2 { margin: 0; }
+.jp-send-thumb {
+  width: 64px; height: 44px; object-fit: cover; border-radius: 6px; flex-shrink: 0;
+  border: 1px solid var(--line-strong); background: var(--bg-well);
+}
+.choice-box p.jp-send-sub { margin: 2px 0 0; }
+.jp-send-label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--fg-muted); }
+.jp-send-label .choice-input { margin-bottom: 10px; }
+.jp-send-textarea { height: auto; min-height: 88px; padding: 8px 10px; line-height: 1.45; resize: vertical; font-family: inherit; }
+.jp-send-error { min-height: 0; margin: -4px 0 8px; font-size: 11px; color: rgb(var(--danger-text-rgb)); }
+.jp-send-error:empty { display: none; }
+.choice-actions .jp-send-primary { background: var(--accent); color: var(--on-accent); }
+.choice-actions .jp-send-primary:hover { background: var(--accent-strong); color: var(--on-accent); }
+
+/* ── Editor: progress and result ── */
+.jp-send-toast {
+  position: fixed; left: 50%; bottom: calc(136px + var(--video-dock-h, 0px)); transform: translateX(-50%);
+  z-index: 850; display: none; align-items: center; gap: 10px;
+  width: max-content; max-width: min(560px, calc(100vw - 32px)); padding: 10px 12px; border-radius: 12px;
+  background: var(--bg-elevated); color: var(--fg); border: 1px solid var(--line-strong); box-shadow: var(--shadow);
+  font-size: 12px;
+}
+body.toolbar-top .jp-send-toast { bottom: 28px; }
+.jp-send-toast.on { display: flex; }
+.jp-send-icon {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 22px; height: 22px; border-radius: 50%; font-weight: 700; font-size: 12px; color: #fff;
+}
+.jp-send-toast.ok .jp-send-icon { background: rgb(22,163,74); }
+.jp-send-toast.error .jp-send-icon { background: rgb(220,38,38); }
+.jp-send-spinner {
+  width: 18px; height: 18px; flex-shrink: 0; border-radius: 50%;
+  border: 2px solid rgba(var(--ink), calc(.18 * var(--line-boost))); border-top-color: var(--accent);
+  animation: jp-send-spin .8s linear infinite;
+}
+@keyframes jp-send-spin { to { transform: rotate(360deg); } }
+.jp-send-body { min-width: 0; }
+.jp-send-text { font-weight: 600; overflow-wrap: anywhere; }
+.jp-send-detail { margin-top: 2px; font-size: 11px; line-height: 1.4; color: var(--fg-muted); overflow-wrap: anywhere; }
+.jp-send-actions { display: flex; align-items: center; gap: 6px; margin-left: 6px; flex-shrink: 0; }
+.jp-send-btn {
+  height: 26px; padding: 0 10px; border-radius: 7px; font: 600 11px inherit; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--line-strong); background: rgba(var(--ink), calc(.06 * var(--ink-boost))); color: var(--fg);
+}
+.jp-send-btn:hover { background: rgba(var(--accent-rgb), .25); }
+.jp-send-close {
+  width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; cursor: pointer;
+  color: var(--fg-muted); font-size: 12px;
+}
+.jp-send-close:hover { background: rgba(var(--ink), calc(.08 * var(--ink-boost))); color: var(--fg); }

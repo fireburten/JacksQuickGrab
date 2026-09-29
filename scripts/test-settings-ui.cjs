@@ -62,6 +62,7 @@ ipcMain.handle('shortcuts-set', (_e, shortcuts) => { savedHotkeys.push(shortcuts
 ipcMain.on('open-keyboard-settings', () => { keyboardSettingsOpened++; });
 ['permission-status', 'clipboard-image', 'gallery-load'].forEach(channel => ipcMain.handle(channel, () => null));
 ipcMain.handle('project-folders', () => ({}));
+ipcMain.handle('search-status', () => ({ enabled: true, indexed: 12, pending: 0 }));
 
 app.on('window-all-closed', () => {});
 
@@ -96,7 +97,8 @@ async function editorTests(errors) {
   w.webContents.sendInputEvent({ type: 'keyDown', keyCode: ',', modifiers: ['meta'] });
   await wait(400);
   check('⌘, opens Settings', await js('JPSettings.isOpen()'));
-  check('Settings has its five sections', (await js(`[...document.querySelectorAll('.sp-nav button')].map(b => b.textContent).join('|')`)) === 'Appearance|Annotations|Capture|Recording|Storage');
+  const sections = await js(`[...document.querySelectorAll('.sp-nav button')].map(b => b.textContent).join('|')`);
+  check('Settings lists its sections', sections === 'Appearance|Annotations|Brand|Capture|Recording|Storage', sections);
   check('footer shows the version (development)', (await js(`document.querySelector('.sp-version')?.textContent`)) === 'Version 1.0.0 · development',
     await js(`document.querySelector('.sp-version')?.textContent`));
 
@@ -232,6 +234,10 @@ async function hudTests(errors) {
   check('HUD: theme applies', (await js('document.documentElement.dataset.theme')) === 'dark');
   w.webContents.sendInputEvent({ type: 'keyDown', keyCode: ',', modifiers: ['meta'] }); await wait(300);
   check('HUD: ⌘, asks main to open Settings', opens.length === 1);
+  w.webContents.send('hud-flash', 'Copied 2 lines of text'); await wait(150);
+  check('HUD: shows a short message (e.g. after Copy Text)', (await js(`(f => !f.hidden && f.textContent)(document.getElementById('hud-flash'))`)) === 'Copied 2 lines of text');
+  await wait(2300);
+  check('HUD: the message clears itself', await js(`document.getElementById('hud-flash').hidden`));
   w.destroy();
 }
 

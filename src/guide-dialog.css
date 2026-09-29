@@ -1,0 +1,75 @@
+/* Create Guide dialog (src/guide-dialog.js). Builds on the editor's .choice-backdrop /
+   .choice-box dialogs; every colour is a theme token, so Dark, Light and high contrast work. */
+/* Two classes: this file loads before the editor's own .choice-box rules. */
+.choice-box.guide-box { width: min(640px, calc(100vw - 32px)); display: flex; flex-direction: column; outline: none; }
+.guide-box.reordering { user-select: none; }
+.guide-box.reordering, .guide-box.reordering * { cursor: grabbing !important; }
+.guide-label { display: block; margin: 0 0 5px; font-size: 11px; font-weight: 600; color: var(--fg-muted); }
+.guide-title::placeholder, .guide-caption::placeholder { color: var(--fg-faint); }
+.guide-note {
+  margin: -4px 0 12px; padding: 8px 10px; border-radius: 8px; font-size: 11px; line-height: 1.45;
+  border: 1px solid var(--line-strong); background: rgba(var(--ink), calc(.04 * var(--ink-boost))); color: var(--fg-muted);
+}
+.guide-note[hidden], .guide-error[hidden] { display: none; }
+.guide-steps-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.guide-hint { font-size: 10.5px; color: var(--fg-muted); text-align: right; }
+.guide-steps {
+  list-style: none; margin: 0 0 12px; padding: 5px; display: flex; flex-direction: column; gap: 5px;
+  min-height: 84px; max-height: min(46vh, 420px); overflow-y: auto;
+  border: 1px solid var(--line-strong); border-radius: 9px; background: rgba(var(--ink), calc(.03 * var(--ink-boost)));
+}
+.guide-step {
+  display: grid; grid-template-columns: 14px 22px 96px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+  padding: 6px 7px 6px 3px; border-radius: 8px; background: var(--bg-panel); border: 1px solid var(--line-strong);
+}
+.guide-step.dragging { position: relative; z-index: 1; border-color: var(--accent); box-shadow: 0 8px 22px rgba(0,0,0,calc(.35 * var(--shadow-k))); }
+.guide-grip {
+  cursor: grab; user-select: none; touch-action: none; text-align: center;
+  font-size: 12px; letter-spacing: -2px; color: var(--fg-muted);
+}
+.guide-step.dragging .guide-grip { cursor: grabbing; }
+.guide-num {
+  width: 22px; height: 22px; border-radius: 11px; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: var(--fg); background: rgba(var(--accent-rgb), calc(.24 * var(--ink-boost)));
+}
+.guide-thumb {
+  position: relative; width: 96px; height: 60px; border-radius: 6px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center; background: var(--bg-well); color: var(--fg-faint);
+}
+.guide-thumb img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.guide-badge {
+  position: absolute; left: 3px; bottom: 3px; padding: 1px 4px; border-radius: 4px;
+  font-size: 8.5px; font-weight: 700; letter-spacing: .02em; color: #fff; background: rgba(0,0,0,.62);
+}
+.guide-caption {
+  width: 100%; min-height: 46px; max-height: 140px; resize: vertical; padding: 6px 8px; border-radius: 7px;
+  border: 1px solid var(--line-strong); background: var(--bg-input); color: var(--fg); outline: none;
+  font-family: inherit; font-size: 12px; line-height: 1.4;
+}
+.guide-caption:focus { border-color: rgba(var(--accent-rgb), calc(.6 * var(--line-boost))); }
+.guide-step-buttons { display: flex; flex-direction: column; gap: 2px; }
+.guide-step-buttons button {
+  width: 24px; height: 19px; padding: 0; border: 0; border-radius: 5px; cursor: pointer;
+  font-size: 11px; line-height: 1; background: rgba(var(--ink), calc(.06 * var(--ink-boost))); color: var(--fg-muted);
+}
+.guide-step-buttons button:hover:not(:disabled) { background: rgba(var(--accent-rgb), calc(.26 * var(--ink-boost))); color: var(--fg); }
+.guide-step-buttons button:disabled { opacity: .35; cursor: default; }
+.guide-empty { padding: 18px 10px; font-size: 11.5px; line-height: 1.5; text-align: center; color: var(--fg-muted); }
+.guide-options { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 7px; }
+.guide-seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+.guide-seg button {
+  border: 0; padding: 6px 13px; cursor: pointer; background: transparent; color: var(--fg-muted);
+  font-family: inherit; font-size: 12px;
+}
+.guide-seg button + button { border-left: 1px solid var(--line-strong); }
+.guide-seg button:hover:not(.on):not(:disabled) { background: rgba(var(--ink), calc(.06 * var(--ink-boost))); color: var(--fg); }
+.guide-seg button.on { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.guide-seg button:disabled { cursor: default; }
+.guide-check { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg-muted); cursor: pointer; }
+.guide-check input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+.choice-box p.guide-format-hint { margin: 0 0 12px; }
+.choice-box p.guide-error { margin: -4px 0 12px; font-weight: 600; color: rgb(var(--danger-text-rgb)); }
+.guide-actions .guide-primary { background: var(--accent); color: var(--on-accent); }
+.guide-actions .guide-primary:hover:not(:disabled) { background: var(--accent-strong); color: var(--on-accent); }
+.guide-actions button:disabled { opacity: .5; cursor: default; }
+.guide-box.busy .guide-grip { cursor: default; }

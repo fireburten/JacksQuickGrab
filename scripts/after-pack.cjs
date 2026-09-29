@@ -4,6 +4,9 @@
 // ELECTRON_RUN_AS_NODE, NODE_OPTIONS or --inspect. It runs before signing, so the release
 // signature covers the change. Check a build with:
 //   npx @electron/fuses read --app "dist/mac-arm64/Jack's Picker.app"
+// It also writes the permission prompts (Screen Recording, microphone, camera) in the app's
+// other languages, from the same translation tables the app uses.
+const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses');
@@ -32,8 +35,27 @@ exports.default = async function afterPack({ electronPlatformName, appOutDir, pa
   // local build won't launch on Apple silicon. Only that binary is re-signed: a whole-bundle
   // `codesign --deep` fails inside iCloud Drive (~/Documents), which tags bundle folders with
   // Finder info. Release signing re-signs everything afterwards.
+  if (mac) localizePermissionPrompts(app);
+
   if (mac) {
     const framework = path.join(app, 'Contents', 'Frameworks', 'Electron Framework.framework', 'Electron Framework');
     execFileSync('codesign', ['--sign', '-', '--force', '--preserve-metadata=entitlements,requirements,flags,runtime', framework]);
   }
 };
+
+// <lang>.lproj/InfoPlist.strings: the Info.plist *UsageDescription texts, translated.
+function localizePermissionPrompts(app) {
+  const info = require('../package.json').build.mac.extendInfo;
+  const keys = Object.keys(info).filter(k => /UsageDescription$/.test(k));
+  const { LANGUAGES } = require('../src/i18n.js');
+  for (const code of Object.keys(LANGUAGES).filter(c => c !== 'en')) {
+    const table = require(`../src/locales/${code}.js`);
+    const lines = keys.filter(k => table[info[k]]).map(k => `"${k}" = ${JSON.stringify(table[info[k]])};`);
+    if (!lines.length) continue;
+    const dir = path.join(app, 'Contents', 'Resources', `${code}.lproj`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'InfoPlist.strings'), lines.join('\n') + '\n');
+  }
+}
+
+exports.localizePermissionPrompts = localizePermissionPrompts;

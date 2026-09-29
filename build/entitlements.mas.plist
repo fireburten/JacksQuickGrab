@@ -18,8 +18,14 @@
   <!-- Microphone narration in screen recordings (HUD's 🎙 toggle). -->
   <key>com.apple.security.device.audio-input</key>
   <true/>
+  <!-- The camera bubble in screen recordings (HUD's 📷 toggle). -->
+  <key>com.apple.security.device.camera</key>
+  <true/>
   <!-- Captures and recordings are stored in ~/Pictures/Jack's Picker. -->
   <key>com.apple.security.assets.pictures.read-write</key>
+  <true/>
+  <!-- "Send to…" sharing: uploads to the storage, Slack, Jira, Linear, Teams or GitHub the user set up. -->
+  <key>com.apple.security.network.client</key>
   <true/>
 </dict>
 </plist>

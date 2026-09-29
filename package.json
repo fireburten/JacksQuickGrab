@@ -18,7 +18,7 @@
     "rebuild:open": "npm run build:dir && npm run open:dist",
     "check:release": "node scripts/check-release.cjs",
     "build:privacy": "node scripts/build-privacy-page.mjs",
-    "test": "node scripts/test-main-process.cjs && node scripts/test-scroll-stitch.cjs && unset ELECTRON_RUN_AS_NODE && electron scripts/test-settings-ui.cjs && electron scripts/test-media-editor.cjs && electron scripts/test-theme.cjs"
+    "test": "node scripts/test-main-process.cjs && node scripts/test-scroll-stitch.cjs && node scripts/test-quick-access.cjs && unset ELECTRON_RUN_AS_NODE && electron scripts/test-settings-ui.cjs && electron scripts/test-annotations.cjs && electron scripts/test-search.cjs && electron scripts/test-redact.cjs && electron scripts/test-accessibility.cjs && electron scripts/test-i18n.cjs && electron scripts/test-media-editor.cjs && electron scripts/test-theme.cjs && electron scripts/test-guide.cjs && electron scripts/test-webcam.cjs && electron scripts/test-sharing.cjs"
   },
   "devDependencies": {
     "@electron/fuses": "^1.8.0",
@@ -31,6 +31,7 @@
     "files": [
       "main.js",
       "preload.cjs",
+      "lib/**/*",
       "package.json",
       "picker-icon.png",
       "picker-hud.png",
@@ -43,6 +44,7 @@
       "scripts/ocr-table.ps1"
     ],
     "afterPack": "scripts/after-pack.cjs",
+    "electronLanguages": ["en", "de", "es", "fr", "ja"],
     "mac": {
       "category": "public.app-category.graphics-design",
       "icon": "build/icon.png",
@@ -53,7 +55,8 @@
         "NSScreenCaptureUsageDescription": "Jack's Picker captures your screen when you take a screenshot or recording.",
         "LSUIElement": true,
         "ITSAppUsesNonExemptEncryption": false,
-        "NSMicrophoneUsageDescription": "Jack's Picker records your microphone only when you turn on 🎙 for a screen recording."
+        "NSMicrophoneUsageDescription": "Jack's Picker records your microphone only when you turn on 🎙 for a screen recording.",
+        "NSCameraUsageDescription": "Jack's Picker shows your camera in a recording only when you turn on 📷."
       },
       "x64ArchFiles": "Contents/Resources/app.asar.unpacked/bin/*"
     },

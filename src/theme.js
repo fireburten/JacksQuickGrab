@@ -71,7 +71,10 @@
 
   // Settings objects from main; ignore anything that doesn't carry an appearance.
   function applySettings(settings) {
-    if (settings && settings.appearance && typeof settings.appearance === 'object') apply(settings.appearance);
+    if (!settings || !settings.appearance || typeof settings.appearance !== 'object') return;
+    apply(settings.appearance);
+    // The language (src/i18n.js): a page showing another one reloads in the new language.
+    if (window.JPi18n && window.JPi18n.applySettingsLanguage(settings.appearance.language)) location.reload();
   }
 
   window.JPTheme = { apply, ACCENTS, current: () => ({ ...current }) };

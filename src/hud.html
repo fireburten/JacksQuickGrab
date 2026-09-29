@@ -5,6 +5,11 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; media-src mediastream:; base-uri 'none'; form-action 'none'">
 <link rel="stylesheet" href="fonts/poppins.css">
 <link rel="stylesheet" href="theme.css">
+<script src="i18n.js"></script>
+<script src="locales/de.js"></script>
+<script src="locales/es.js"></script>
+<script src="locales/fr.js"></script>
+<script src="locales/ja.js"></script>
 <script src="theme.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -15,7 +20,15 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
+/* A short message over the bar, e.g. after Copy Text from Screen. */
+.hud-flash {
+  position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 0 20px;
+  border-radius: 18px; background: rgba(var(--bg-float-rgb),.98); color: var(--fg);
+  font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hud-flash[hidden] { display: none; }
 .hud {
+  position: relative;
   width: 100vw;
   height: 70px;
   display: flex;
@@ -93,7 +106,7 @@ body {
 .mode-btn:disabled { opacity: 0.35; cursor: default; }
 .mode-btn .ic { font-size: 17px; line-height: 1; color: rgba(var(--ink),calc(.6 + .24 * var(--text-boost) + .4 * var(--text-lift))); }
 .mode-btn:hover:not(:disabled) .ic { color: var(--fg); }
-.mode-btn .lbl { font-size: 10px; font-weight: 500; color: rgba(var(--ink),calc(.38 + .2356 * var(--text-boost) + .62 * var(--text-lift))); }
+.mode-btn .lbl { font-size: 10px; font-weight: 500; white-space: nowrap; color: rgba(var(--ink),calc(.38 + .2356 * var(--text-boost) + .62 * var(--text-lift))); }
 .mode-btn:hover:not(:disabled) .lbl { color: rgba(var(--ink),calc(.9 + .09 * var(--text-boost) + .1 * var(--text-lift))); }
 .mode-btn.flash { background: var(--accent) !important; }
 .mode-btn.flash .ic, .mode-btn.flash .lbl { color: var(--on-accent) !important; }
@@ -120,13 +133,21 @@ body {
   cursor: pointer !important; -webkit-app-region: no-drag;
 }
 .rec-stop:hover { background: #dc2626; }
-.audio-toggles { display: flex; flex-direction: column; gap: 3px; margin-left: -1px; -webkit-app-region: no-drag; }
-.audio-toggle {
+.audio-toggles { display: grid; grid-auto-flow: column; grid-template-rows: 22px 22px; gap: 3px; margin-left: -1px; -webkit-app-region: no-drag; }
+.audio-toggle, .cam-toggle {
   width: 24px; height: 22px; border: none; border-radius: 7px; cursor: pointer;
   background: rgba(var(--ink),calc(.05 * var(--ink-boost))); font-size: 11px; line-height: 1; filter: grayscale(1); opacity: .45;
 }
-.audio-toggle:hover { opacity: .8; }
-.audio-toggle.on { background: rgba(var(--accent-rgb),.45); filter: none; opacity: 1; }
+.audio-toggle:hover, .cam-toggle:hover { opacity: .8; }
+.audio-toggle.on, .cam-toggle.on { background: rgba(var(--accent-rgb),.45); filter: none; opacity: 1; }
+/* 📷 camera bubble (src/webcam.js): its toggle is a second column beside 🔊/🎙. While recording,
+   a live preview shows the camera is on; the HUD is kept out of recordings, so it never appears in one. */
+.cam-toggle { grid-row: span 2; height: auto; }
+.rec-camera {
+  width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%; object-fit: cover; transform: scaleX(-1);
+  background: var(--bg-well); box-shadow: 0 0 0 2px rgba(var(--accent-rgb),.85);
+}
+.rec-camera.rounded { border-radius: 10px; }
 .rec-audio { font-size: 12px; letter-spacing: 2px; }
 .rec-note {
   border: none; background: rgba(245,158,11,calc(.18 * var(--ink-boost))); color: rgb(var(--warn-text-rgb)); font: 600 11px inherit;
@@ -151,7 +172,7 @@ body {
   font-family: inherit;
 }
 .hist-btn .ic { font-size: 15px; color: rgba(var(--ink),calc(.3 + .21 * var(--text-boost) + .7 * var(--text-lift))); }
-.hist-btn .lbl { font-size: 10px; color: rgba(var(--ink),calc(.22 + .1716 * var(--text-boost) + .78 * var(--text-lift))); }
+.hist-btn .lbl { font-size: 10px; white-space: nowrap; color: rgba(var(--ink),calc(.22 + .1716 * var(--text-boost) + .78 * var(--text-lift))); }
 .hist-btn:hover .ic { color: rgba(var(--ink),calc(.6 + .24 * var(--text-boost) + .4 * var(--text-lift))); }
 .hist-btn:hover .lbl { color: rgba(var(--ink),calc(.5 + .25 * var(--text-boost) + .5 * var(--text-lift))); }
 .collapse-btn {
@@ -170,10 +191,11 @@ body {
 </head>
 <body>
 <div class="hud">
+  <div class="hud-flash" id="hud-flash" role="status" aria-live="polite" hidden></div>
   <div class="drag-handle">
     <img src="../picker-hud.png" alt="Jack's Picker">
   </div>
-  <button class="collapse-btn" id="btn-collapse" title="Collapse HUD">‹</button>
+  <button class="collapse-btn" id="btn-collapse" title="Collapse HUD" aria-label="Collapse the capture bar">‹</button>
 
   <button class="mode-btn" data-mode="region" title="Capture Region">
     <span class="ic">⊹</span><span class="lbl">Region</span>
@@ -193,6 +215,7 @@ body {
   <div class="audio-toggles">
     <button class="audio-toggle" data-audio="system" type="button" title="Record system audio (sound your Mac plays)">🔊</button>
     <button class="audio-toggle" data-audio="mic" type="button" title="Record microphone">🎙</button>
+    <button class="cam-toggle" id="cam-toggle" type="button" title="Show your camera in recordings">📷</button>
   </div>
   <button class="mode-btn" data-mode="gif" title="Record GIF">
     <span class="ic">◑</span><span class="lbl">GIF</span>
@@ -205,6 +228,7 @@ body {
   </button>
 
   <div class="rec-bar" id="rec-bar">
+    <video class="rec-camera" id="rec-camera" autoplay muted playsinline hidden title="Your camera is in this recording"></video>
     <span class="rec-dot"></span>
     <span class="rec-timer" id="rec-timer">0:00</span>
     <span class="rec-audio" id="rec-audio"></span>
@@ -215,6 +239,7 @@ body {
 
 <script src="scroll-stitch.js"></script>
 <script src="vendor/gifenc.js"></script>
+<script src="webcam.js"></script>
 <script>
 const hud = document.querySelector('.hud');
 const dragHandle = document.querySelector('.drag-handle');
@@ -225,6 +250,7 @@ function setCollapsed(next) {
   collapsed = !!next;
   hud.classList.toggle('collapsed', collapsed);
   collapseBtn.title = collapsed ? 'Expand HUD' : 'Collapse HUD';
+  collapseBtn.setAttribute('aria-label', collapsed ? 'Expand the capture bar' : 'Collapse the capture bar');
   collapseBtn.textContent = collapsed ? '›' : '‹';
   localStorage.setItem('jqg-hud-collapsed', collapsed ? '1' : '0');
   window.electronAPI?.hudSetCollapsed?.(collapsed);
@@ -276,7 +302,7 @@ async function refreshShortcutTips() {
   Object.entries(SHORTCUT_TIPS).forEach(([mode, label]) => {
     const btn = document.querySelector(`.mode-btn[data-mode="${mode}"]`);
     const combo = displayHotkey(shortcuts[mode]);
-    if (btn) btn.title = combo ? `${label} (${combo})` : label;
+    if (btn) btn.title = combo ? `${tr(label)} (${combo})` : tr(label);
   });
 }
 
@@ -351,7 +377,7 @@ async function openRegionStream({ x, y, w, h, displayW, displayH }, { systemAudi
   return { crop, drawTo, close, audioTracks: stream.getAudioTracks() };
 }
 
-function startVideo(src, { mic = null } = {}) {
+function startVideo(src, { mic = null, camera = null } = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = src.crop.w; canvas.height = src.crop.h;
   const ctx = canvas.getContext('2d');
@@ -359,6 +385,7 @@ function startVideo(src, { mic = null } = {}) {
   (function draw() {
     if (!drawing) return;
     src.drawTo(ctx);
+    camera?.draw(ctx);
     requestAnimationFrame(draw);
   })();
 
@@ -386,6 +413,7 @@ function startVideo(src, { mic = null } = {}) {
       drawing = false;
       src.close();
       mic?.getTracks().forEach(t => t.stop());
+      closeCamera(camera);
       audioCtx?.close();
       const buffer = await new Blob(chunks, { type: mimeType }).arrayBuffer();
       await window.electronAPI.saveRecording(buffer, ext);
@@ -393,6 +421,7 @@ function startVideo(src, { mic = null } = {}) {
     };
   });
   recorder.start(1000);
+  showCameraPreview(camera);
   const timer = startTimer();
   return {
     async finish() {
@@ -503,13 +532,19 @@ async function stopSession() {
 const REC_AUDIO_KEY = 'jqg-rec-audio';   // pre-Settings storage, carried over once
 let recAudioPrefs = { system: false, mic: false };
 
+let managedAudio = {};   // toggles an organization has switched off (Settings → managed)
+const tr = (text, vars) => (window.JPi18n ? window.JPi18n.t(text, vars)
+  : vars ? String(text).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : text);   // src/i18n.js
+
 function applyRecordingSettings(settings) {
   const r = settings?.recording;
   if (!r) return;
+  managedAudio = { system: !!settings.managed?.systemAudio, mic: !!settings.managed?.mic, camera: !!settings.managed?.camera };
   recAudioPrefs = { system: r.systemAudio, mic: r.mic };
   GIF_FPS = r.gifFps;
   GIF_MAX_WIDTH = r.gifWidth;
   syncAudioToggles();
+  applyCameraSettings(r);
 }
 
 async function loadRecordingSettings() {
@@ -525,6 +560,15 @@ async function loadRecordingSettings() {
 }
 window.electronAPI?.onSettingsChanged?.(applyRecordingSettings);
 
+let hudFlashTimer = null;
+window.electronAPI?.onHudFlash?.(text => {
+  const flash = document.getElementById('hud-flash');
+  flash.textContent = text;
+  flash.hidden = false;
+  clearTimeout(hudFlashTimer);
+  hudFlashTimer = setTimeout(() => { flash.hidden = true; }, 2200);
+});
+
 // ⌘, works here too: the Settings panel lives in the editor, which main brings up.
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); window.electronAPI?.openSettings?.(); }
@@ -535,7 +579,13 @@ function syncAudioToggles() {
     const on = !!recAudioPrefs[b.dataset.audio];
     b.classList.toggle('on', on);
     const what = b.dataset.audio === 'mic' ? 'microphone' : 'system audio (sound your Mac plays)';
-    b.title = `${on ? 'Recording' : 'Not recording'} ${what}: click to turn ${on ? 'off' : 'on'}`;
+    b.disabled = !!managedAudio[b.dataset.audio];
+    b.setAttribute('aria-label', b.dataset.audio === 'mic' ? 'Record the microphone' : 'Record the sound your Mac plays');
+    b.setAttribute('aria-pressed', String(on));
+    const mic = b.dataset.audio === 'mic';
+    b.title = tr(b.disabled ? (mic ? 'Recording the microphone is turned off by your organization' : 'Recording system audio is turned off by your organization')
+      : on ? (mic ? 'Recording microphone: click to turn off' : 'Recording system audio (sound your Mac plays): click to turn off')
+        : (mic ? 'Not recording microphone: click to turn on' : 'Not recording system audio (sound your Mac plays): click to turn on'));
   });
 }
 
@@ -558,7 +608,7 @@ loadRecordingSettings();
 
 async function openMicStream() {
   try {
-    if (!(await window.electronAPI.micAccess())) { showRecNote('Mic blocked', 'Allow the microphone in System Settings', true); return null; }
+    if (!(await window.electronAPI.micAccess())) { showRecNote('Mic blocked', 'Allow the microphone in System Settings', () => window.electronAPI.openMicSettings()); return null; }
     return await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (err) {
     console.warn('microphone unavailable', err);
@@ -568,32 +618,105 @@ async function openMicStream() {
 }
 
 // A short warning in the recording bar (e.g. audio that couldn't be captured). Clicking a
-// permission note opens the relevant settings.
+// permission note opens the relevant settings (onClick).
 let recNoteTimer = null;
-function showRecNote(text, title = '', openSettings = false) {
+function showRecNote(text, title = '', onClick = null) {
   const note = document.getElementById('rec-note');
   clearTimeout(recNoteTimer);
   note.hidden = !text;
   if (!text) return;
   note.textContent = `⚠ ${text}`;
   note.title = title;
-  note.onclick = openSettings ? () => window.electronAPI.openMicSettings() : null;
+  note.onclick = onClick;
   recNoteTimer = setTimeout(() => { note.hidden = true; }, 6000);
+}
+
+// ── Camera bubble (📷) ────────────────────────────────────────────────────────
+// Screen recordings can show the camera in a corner; src/webcam.js draws it into every frame.
+// 📷 and Settings → Recording change the same setting. Like 🎙, access is asked for when it's
+// switched on, so the prompt doesn't interrupt a recording.
+const camToggle = document.getElementById('cam-toggle');
+const camPreview = document.getElementById('rec-camera');
+let cameraPrefs = { camera: false };   // Settings → Recording: camera, cameraSize, cameraCorner, cameraShape
+
+function applyCameraSettings(recording) {
+  cameraPrefs = recording;
+  syncCameraToggle();
+}
+
+function syncCameraToggle() {
+  const on = !!cameraPrefs.camera;
+  camToggle.classList.toggle('on', on);
+  camToggle.disabled = !!managedAudio.camera;
+  camToggle.setAttribute('aria-label', 'Show your camera in recordings');
+  camToggle.setAttribute('aria-pressed', String(on));
+  camToggle.title = camToggle.disabled ? 'The camera in recordings is turned off by your organization'
+    : tr(on ? 'Showing your camera in recordings: click to turn off' : 'Not showing your camera in recordings: click to turn on');
+}
+
+camToggle.addEventListener('click', async () => {
+  const on = !cameraPrefs.camera;
+  if (on && window.electronAPI && !(await window.electronAPI.cameraAccess())) {
+    camToggle.title = 'Camera access is off: allow Jack\'s Picker in System Settings → Privacy & Security → Camera';
+    window.electronAPI.openCameraSettings();
+    return;
+  }
+  applyCameraSettings({ ...cameraPrefs, camera: on });
+  applyRecordingSettings(await window.electronAPI?.settingsSet?.({ recording: { camera: on } }));
+});
+syncCameraToggle();
+
+// Resolves to the open camera, or null (with a note) so the recording goes ahead without it.
+async function openCamera() {
+  try {
+    if (!(await window.electronAPI.cameraAccess())) {
+      showRecNote('Camera blocked', 'Allow the camera in System Settings', () => window.electronAPI.openCameraSettings());
+      return null;
+    }
+    const camera = await window.JPWebcam.open({ ...cameraPrefs });
+    camera.onEnded(() => {
+      showCameraPreview(null);
+      showRecNote('Camera disconnected', 'The rest of this recording is without the camera');
+    });
+    return camera;
+  } catch (err) {
+    console.warn('camera unavailable', err);
+    showRecNote('No camera', 'No camera could be opened');
+    return null;
+  }
+}
+
+// The live preview in the recording bar, so it's clear the camera is on.
+function showCameraPreview(camera) {
+  camPreview.srcObject = camera ? camera.stream : null;
+  camPreview.hidden = !camera;
+  camPreview.classList.toggle('rounded', camera?.prefs.cameraShape === 'rounded');
+}
+
+// Hides the preview and turns the camera off (its light goes out).
+function closeCamera(camera) {
+  showCameraPreview(null);
+  camera?.stop();
 }
 
 if (window.electronAPI) {
   window.electronAPI.onRecordingRegion(async region => {
     const kind = region.kind || 'video';
+    let mic = null, camera = null;
     try {
-      // Audio applies to screen recordings only (not GIF or scrolling capture).
+      // Audio and the camera bubble apply to screen recordings only (not GIF or scrolling capture).
       const audio = kind === 'video' ? recAudioPrefs : { system: false, mic: false };
-      const mic = audio.mic ? await openMicStream() : null;
+      mic = audio.mic ? await openMicStream() : null;
+      camera = kind === 'video' && cameraPrefs.camera ? await openCamera() : null;
       const src = await openRegionStream(region, { systemAudio: audio.system });
       const start = { video: startVideo, gif: startGif, scroll: startScroll }[kind];
       setRecordingUI(kind);
-      session = { kind, ...start(src, { mic }) };
+      session = { kind, ...start(src, { mic, camera }) };
     } catch (err) {
       console.error(`${kind} capture failed:`, err);
+      // Nothing is being recorded, so the mic and camera are let go straight away.
+      mic?.getTracks().forEach(t => t.stop());
+      closeCamera(camera);
       setRecordingUI(null);
       if (kind === 'scroll') window.electronAPI.scrollCaptureDone(null);
       else window.electronAPI.recordingStopped();

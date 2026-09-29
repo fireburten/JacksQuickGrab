@@ -1,0 +1,30 @@
+/* Floating thumbnail after a capture (src/thumbnail.js): the capture above, its actions below.
+   The window is the card; macOS rounds its corners and draws its shadow. The buttons are always
+   shown because macOS doesn't send hover events to an inactive app's windows. */
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+body {
+  display: flex; flex-direction: column;
+  background: var(--bg-panel); color: var(--fg);
+  font-family: Poppins, system-ui, -apple-system, sans-serif;
+  user-select: none; -webkit-user-select: none;
+}
+.shot { position: relative; flex: 1; min-height: 0; background: var(--bg-canvas); cursor: pointer; }
+.shot img {
+  display: block; width: 100%; height: 100%;
+  object-fit: cover; object-position: top center;   /* a tall scrolling capture shows its top */
+  pointer-events: none; -webkit-user-drag: none;
+}
+.shot::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  border-bottom: 1px solid var(--line);
+}
+.shot:hover::after { background: rgba(var(--accent-rgb), .12); }
+.bar { flex-shrink: 0; height: 34px; display: flex; align-items: center; gap: 4px; padding: 0 5px; }
+.bar button {
+  height: 24px; padding: 0 10px; border: 0; border-radius: 7px; cursor: pointer;
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  color: var(--fg-muted); background: rgba(var(--ink), calc(.06 * var(--ink-boost)));
+}
+.bar button:hover { color: var(--fg); background: rgba(var(--accent-rgb), calc(.24 * var(--ink-boost))); }
+.bar button.done { color: rgb(var(--ok-text-rgb)); background: rgba(var(--ok-text-rgb), .14); }
+.bar .close { margin-left: auto; width: 24px; padding: 0; }

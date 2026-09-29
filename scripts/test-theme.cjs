@@ -279,7 +279,7 @@ async function editorCase(name, appearance) {
 }
 
 async function hudCase(name, appearance) {
-  const { win, page } = await openPage('hud.html', { width: 530, height: 90, transparent: true, appearance });
+  const { win, page } = await openPage('hud.html', { width: 557, height: 90, transparent: true, appearance });
   page.name = name;
   report.pages.push(page);
   expectTheme(page, await themeState(win), appearance);

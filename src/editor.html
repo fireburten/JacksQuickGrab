@@ -5,8 +5,15 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: file:; media-src file:; base-uri 'none'; form-action 'none'">
 <link rel="stylesheet" href="fonts/poppins.css">
 <link rel="stylesheet" href="theme.css">
+<script src="i18n.js"></script>
+<script src="locales/de.js"></script>
+<script src="locales/es.js"></script>
+<script src="locales/fr.js"></script>
+<script src="locales/ja.js"></script>
 <script src="theme.js"></script>
 <link rel="stylesheet" href="settings-panel.css">
+<link rel="stylesheet" href="guide-dialog.css">
+<link rel="stylesheet" href="sharing.css">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -157,6 +164,12 @@ html, body {
   font:700 11px inherit;outline:none;cursor:pointer;
 }
 .hotkey-input.recording { border-color:#FBBF24;background:rgba(251,191,36,calc(.12 * var(--ink-boost))); }
+.stamp-choices { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px; }
+.stamp-choices button {
+  height:34px;border-radius:7px;cursor:pointer;font:700 12px inherit;letter-spacing:.08em;
+  border:2px solid var(--stamp);color:var(--stamp);background:rgba(255,255,255,.9);
+}
+.stamp-choices button.custom { border-style:dashed;letter-spacing:0;font-weight:600; }
 .hotkey-note {
   margin:0 0 12px;padding:9px 10px;border-radius:8px;font-size:11px;line-height:1.45;
   border:1px solid rgba(var(--ink),calc(.1 * var(--line-boost)));background:rgba(var(--ink),calc(.04 * var(--ink-boost)));
@@ -179,6 +192,8 @@ html, body {
 }
 .choice-actions button:hover { background:rgba(var(--accent-rgb),calc(.26 * var(--ink-boost)));color:var(--fg); }
 .choice-actions .danger:hover { background:rgba(239,68,68,calc(.32 * var(--ink-boost))); }
+.choice-actions button.primary { background:var(--accent);color:var(--on-accent); }
+.choice-actions button.primary:hover { background:var(--accent-strong);color:var(--on-accent); }
 .gallery-header {
   padding: 9px 10px 8px; font-size: 10px; font-weight: 600;
   color: rgba(var(--ink),calc(.3 + .21 * var(--text-boost) + .7 * var(--text-lift))); text-transform: uppercase; letter-spacing: .09em;
@@ -188,6 +203,11 @@ html, body {
 }
 .gallery-search {
   padding:6px;border-bottom:1px solid var(--line);
+}
+.gallery-search-status { margin-top:5px;font-size:10px;color:var(--fg-faint); }
+.gallery-item-snippet {
+  margin-top:3px;font-size:10px;font-weight:400;line-height:1.35;color:var(--fg-muted);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;
 }
 .gallery-search input {
   width:100%;height:24px;border:1px solid rgba(var(--ink),calc(.08 * var(--line-boost)));
@@ -603,6 +623,18 @@ body.video-mode .image-only, body.video-mode #canvas-resize-handle { display: no
   pointer-events:none;white-space:nowrap;z-index:30;
 }
 body.toolbar-top .props { top:84px;bottom:auto; }
+.props .tool-variants { display:flex;gap:3px;pointer-events:auto; }
+.props .tool-variants[hidden] { display:none; }
+.tool-variants button {
+  border:1px solid rgba(var(--ink),calc(.1 * var(--line-boost)));border-radius:6px;padding:2px 7px;cursor:pointer;
+  background:transparent;color:rgba(var(--ink),calc(.6 + .24 * var(--text-boost) + .4 * var(--text-lift)));font:inherit;font-size:11px;
+}
+.tool-variants button:hover { color:var(--fg); }
+.tool-variants button.on { background:rgba(var(--accent-rgb),calc(.25 * var(--ink-boost)));border-color:rgba(var(--accent-rgb),.6);color:var(--fg); }
+#insp-step-n {
+  width:64px;height:28px;border-radius:7px;border:1px solid rgba(var(--ink),calc(.12 * var(--line-boost)));
+  background:var(--bg-input);color:var(--fg);padding:0 8px;font:inherit;font-size:12px;
+}
 strong { color:var(--fg); }
 
 .autosave-badge {
@@ -686,9 +718,9 @@ body.crop-mode .crop-actions { display:flex; }
       <button id="project-create-ok" title="Create">✓</button>
       <button class="cancel" id="project-create-cancel" title="Cancel">×</button>
     </div>
-    <div class="gallery-search"><input id="gallery-search" placeholder="Search captures"></div>
+    <div class="gallery-search"><input id="gallery-search" placeholder="Search captures and their text"><div class="gallery-search-status" id="gallery-search-status" hidden></div></div>
     <div class="gallery-projects" id="gallery-projects"></div>
-    <div class="gallery-scroll" id="gallery-scroll">
+    <div class="gallery-scroll" id="gallery-scroll" data-no-i18n>
       <div class="gallery-empty" id="gallery-empty">No captures yet</div>
     </div>
   </div>
@@ -697,12 +729,13 @@ body.crop-mode .crop-actions { display:flex; }
   <div class="tool-sidebar">
     <button class="tbtn" data-tool="select" title="Select / Move (S)"><span class="ic">↖</span><span class="lbl">Select</span></button>
     <div class="tool-sep"></div>
-    <button class="tbtn active" data-tool="arrow" title="Arrow (A)"><span class="ic">↗</span><span class="lbl">Arrow</span></button>
+    <button class="tbtn active" data-tool="arrow" data-group="arrow" title="Arrow (A) · Line (L)"><span class="ic">↗</span><span class="lbl">Arrow</span></button>
     <button class="tbtn" data-tool="text" title="Text (T)"><span class="ic">T</span><span class="lbl">Text</span></button>
-    <button class="tbtn" data-tool="box" title="Box (B)"><span class="ic">▭</span><span class="lbl">Box</span></button>
-    <button class="tbtn" data-tool="highlight" title="Highlight (H)"><span class="ic">▬</span><span class="lbl">High</span></button>
-    <button class="tbtn" data-tool="blur" title="Blur (R)"><span class="ic">≋</span><span class="lbl">Blur</span></button>
+    <button class="tbtn" data-tool="box" data-group="box" title="Box (B) · Ellipse (O)"><span class="ic">▭</span><span class="lbl">Box</span></button>
+    <button class="tbtn" data-tool="highlight" data-group="highlight" title="Highlight (H) · Spotlight (F)"><span class="ic">▬</span><span class="lbl">High</span></button>
+    <button class="tbtn" data-tool="blur" data-group="blur" title="Blur (R) · Pixelate (P)"><span class="ic">≋</span><span class="lbl">Blur</span></button>
     <button class="tbtn" data-tool="draw" title="Draw (D)"><span class="ic">✏</span><span class="lbl">Draw</span></button>
+    <button class="tbtn" data-tool="step" title="Step numbers (N)"><span class="ic">①</span><span class="lbl">Step</span></button>
     <div class="tool-sep"></div>
     <div class="swatches">
       <div class="sw on" data-c="#6C4EF6" style="background:#6C4EF6"></div>
@@ -715,24 +748,24 @@ body.crop-mode .crop-actions { display:flex; }
       <div class="sw"    data-c="#000000" style="background:#111"></div>
     </div>
     <div class="color-tools">
-      <button class="color-tool" id="btn-color-picker" title="Choose custom color">▣</button>
-      <button class="color-tool" id="btn-eyedropper" title="Pick color from screen">⌖</button>
-      <input class="color-input" id="custom-color-input" type="color" value="#6C4EF6">
+      <button class="color-tool" id="btn-color-picker" title="Choose custom color" aria-label="Choose a custom color">▣</button>
+      <button class="color-tool" id="btn-eyedropper" title="Pick color from screen" aria-label="Pick a color from the screen">⌖</button>
+      <input class="color-input" id="custom-color-input" type="color" value="#6C4EF6" aria-label="Custom color">
     </div>
     <div class="recent-colors" id="recent-colors"></div>
     <div class="tool-sep"></div>
     <div class="stroke-wrap">
-      <input type="range" id="sw-range" min="1" max="150" value="15">
+      <input type="range" id="sw-range" min="1" max="150" value="15" aria-label="Stroke width">
       <span>Stroke</span>
     </div>
     <div style="flex:1"></div>
-    <button class="panel-toggle" id="btn-toggle-tool-sidebar" title="Move tools left / right">⇄</button>
+    <button class="panel-toggle" id="btn-toggle-tool-sidebar" title="Move tools left / right" aria-label="Move the tools to the other side">⇄</button>
   </div>
 
   <!-- Canvas and, while editing a video, its timeline dock underneath. -->
   <div class="canvas-column">
   <div class="canvas-wrap" id="cw">
-    <canvas id="c"></canvas>
+    <canvas id="c" role="img" aria-label="The capture you’re editing"></canvas>
     <div class="canvas-resize-handle" id="canvas-resize-handle" title="Resize canvas"></div>
     <div class="media-crop-layer" id="media-crop-layer" hidden></div>
     <div class="props">
@@ -740,6 +773,7 @@ body.crop-mode .crop-actions { display:flex; }
       <span>Opacity: <strong>100%</strong></span>
       <span style="color:rgba(255,255,255,.2)">|</span>
       <span id="p-tool">Arrow</span>
+      <span class="tool-variants" id="tool-variants" hidden></span>
     </div>
     <div class="autosave-badge" id="autosave-badge">Auto-saved</div>
     <div class="runtime-badge" id="runtime-badge">Loading</div>
@@ -807,6 +841,10 @@ body.crop-mode .crop-actions { display:flex; }
       <input type="range" id="insp-opacity" min="10" max="100" value="100">
       <label>Text Size</label>
       <input type="range" id="insp-text-size" min="8" max="220" value="42">
+      <div id="insp-step" hidden>
+        <label>Number</label>
+        <div class="inspector-row"><input type="number" id="insp-step-n" min="0" max="999"><button class="ibtn" id="insp-step-renumber" title="Number the steps 1, 2, 3… in the order they were added">Renumber</button></div>
+      </div>
       <div class="insp-timing" id="insp-timing" hidden>
         <label>Show during</label>
         <div class="inspector-row">
@@ -835,11 +873,11 @@ body.crop-mode .crop-actions { display:flex; }
 
 <div class="toolbar">
   <div class="logo"><img src="../picker-hud.png" alt="Jack's Picker"></div>
-  <button class="panel-toggle" id="btn-toggle-toolbar" title="Move toolbar top / bottom">⇅</button>
+  <button class="panel-toggle" id="btn-toggle-toolbar" title="Move toolbar top / bottom" aria-label="Move the toolbar to the top or bottom">⇅</button>
 
-  <button class="abtn abtn-undo" id="btn-zoom-out" title="Zoom out">−</button>
+  <button class="abtn abtn-undo" id="btn-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
   <div class="zoom-readout" id="zoom-readout">100%</div>
-  <button class="abtn abtn-undo" id="btn-zoom-in" title="Zoom in">+</button>
+  <button class="abtn abtn-undo" id="btn-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
   <button class="abtn abtn-undo" id="btn-zoom-fit" title="Fit canvas">Fit</button>
 
   <div class="sep"></div>
@@ -854,6 +892,7 @@ body.crop-mode .crop-actions { display:flex; }
     <summary>Export</summary>
     <div class="menu-pop">
       <button class="abtn abtn-copy"     id="btn-share">Share</button>
+      <button class="abtn abtn-copy image-only" id="btn-send-to" data-sharing hidden>Send to…</button>
       <button class="abtn abtn-save"     id="btn-save">Save PNG</button>
       <button class="abtn abtn-original" id="btn-save-jpg">Save JPG</button>
       <button class="abtn abtn-original image-only" id="btn-copy-original">Copy Original</button>
@@ -877,6 +916,9 @@ body.crop-mode .crop-actions { display:flex; }
       <button class="abtn abtn-original" id="btn-ocr">Copy OCR Text</button>
       <button class="abtn abtn-original" id="btn-ocr-table">Copy Table for Excel</button>
       <button class="abtn abtn-original" id="btn-redact">Smart Redact</button>
+      <button class="abtn abtn-original" id="btn-watermark">Add Watermark</button>
+      <button class="abtn abtn-original" id="btn-stamp">Add Stamp…</button>
+      <button class="abtn abtn-original image-only" id="btn-pin-screen" title="Keep this image above every window">Pin to Screen</button>
       <button class="abtn abtn-original" id="btn-permissions">Permissions</button>
       <button class="abtn abtn-original" id="btn-prefs" title="Settings (⌘,)">Settings…</button>
       <button class="abtn abtn-original" id="btn-hotkeys">Capture Hotkeys</button>
@@ -886,7 +928,7 @@ body.crop-mode .crop-actions { display:flex; }
   <button class="abtn abtn-close" id="btn-close">✕ Close</button>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="context-menu" id="gallery-context"></div>
 <div class="context-menu context-submenu" id="project-context"></div>
 <div class="choice-backdrop" id="project-name-backdrop">
@@ -903,7 +945,7 @@ body.crop-mode .crop-actions { display:flex; }
 <div class="media-viewer" id="media-viewer">
   <div class="media-viewer-stage" id="media-viewer-stage"></div>
   <div class="media-viewer-bar">
-    <span id="media-viewer-name"></span>
+    <span id="media-viewer-name" data-no-i18n></span>
     <button id="media-viewer-edit" type="button">✎ Edit</button>
     <button id="media-viewer-reveal" type="button">Reveal in Finder</button>
     <button id="media-viewer-close" type="button">Close</button>
@@ -924,7 +966,7 @@ body.crop-mode .crop-actions { display:flex; }
         <option value="new">Newest</option><option value="old">Oldest</option><option value="name">Name</option>
       </select>
     </div>
-    <div class="clip-picker-grid" id="clip-picker-grid"></div>
+    <div class="clip-picker-grid" id="clip-picker-grid" data-no-i18n></div>
     <div class="clip-picker-foot">
       <span class="clip-picker-hint" id="clip-picker-hint"></span>
       <div class="choice-actions">
@@ -955,6 +997,25 @@ body.crop-mode .crop-actions { display:flex; }
     </div>
   </div>
 </div>
+<div class="choice-backdrop" id="sensitive-backdrop">
+  <div class="choice-box">
+    <h2>Sensitive info in this capture</h2>
+    <p id="sensitive-text"></p>
+    <div class="choice-actions">
+      <button id="sensitive-redact" class="primary"></button>
+      <button id="sensitive-anyway"></button>
+      <button id="sensitive-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<div class="choice-backdrop" id="stamp-backdrop">
+  <div class="choice-box">
+    <h2>Add Stamp</h2>
+    <p>Marks the capture for its audience. Move, resize or recolor it like any annotation; double-click to change the words.</p>
+    <div class="stamp-choices" id="stamp-choices"></div>
+    <div class="choice-actions"><button id="stamp-cancel">Cancel</button></div>
+  </div>
+</div>
 <div class="choice-backdrop" id="hotkey-backdrop">
   <div class="choice-box">
     <h2>Capture Hotkeys</h2>
@@ -964,13 +1025,14 @@ body.crop-mode .crop-actions { display:flex; }
       <div class="hotkey-row"><label>Repeat</label><button class="hotkey-input" data-hotkey="repeat"></button></div>
       <div class="hotkey-row"><label>Window</label><button class="hotkey-input" data-hotkey="window"></button></div>
       <div class="hotkey-row"><label>Full Screen</label><button class="hotkey-input" data-hotkey="full"></button></div>
+      <div class="hotkey-row"><label>Copy Text</label><button class="hotkey-input" data-hotkey="text"></button></div>
     </div>
     <div class="hotkey-note" id="hotkey-mac-note" hidden>
       <p><strong>Want ⇧⌘3, ⇧⌘4 or ⇧⌘5?</strong> macOS uses those for its own screenshots and takes them first, so turn them off there:</p>
       <ol>
-        <li>Click <strong>Open Keyboard Shortcuts</strong> below.</li>
-        <li>Choose <strong>Screenshots</strong> in the list on the left.</li>
-        <li>Untick the shortcuts you want to use here, then click <strong>Done</strong>.</li>
+        <li>Click “Open Keyboard Shortcuts” below.</li>
+        <li>Choose “Screenshots” in the list on the left.</li>
+        <li>Untick the shortcuts you want to use here, then click “Done”.</li>
       </ol>
       <p>Then click a field above and press the keys.</p>
       <button id="hotkey-open-keyboard">Open Keyboard Shortcuts</button>
@@ -1001,6 +1063,8 @@ body.crop-mode .crop-actions { display:flex; }
 <script src="vendor/gifenc.js"></script>
 <script src="vendor/mp4-muxer.js"></script>
 <script src="media-editor.js"></script>
+<script src="redact-detect.js"></script>
+<script src="sharing.js"></script>
 <script>
 // ── State ──────────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('c');
@@ -1191,9 +1255,19 @@ function rememberColor(nextColor) {
   renderRecentColors();
 }
 
+// Names for the standard swatches; others (brand, custom) are read out as their hex value.
+const SWATCH_NAMES={'#6C4EF6':'Purple','#EF4444':'Red','#F59E0B':'Amber','#22C55E':'Green','#3B82F6':'Blue','#EC4899':'Pink','#FFFFFF':'White','#000000':'Black'};
+
 function syncColorUI() {
   const normalized=normalizeColor(color);
-  document.querySelectorAll('.sw').forEach(x => x.classList.toggle('on', normalizeColor(x.dataset.c) === normalized));
+  document.querySelectorAll('.sw').forEach(x => {
+    const on=normalizeColor(x.dataset.c) === normalized;
+    x.classList.toggle('on', on);
+    // The swatch squares are divs: make them keyboard buttons (Enter/Space, see below).
+    if (x.tagName!=='BUTTON') { x.setAttribute('role','button'); x.tabIndex=0; }
+    x.setAttribute('aria-label',`${SWATCH_NAMES[normalizeColor(x.dataset.c)] || x.dataset.c} color`);
+    x.setAttribute('aria-pressed',String(on));
+  });
   const input=document.getElementById('custom-color-input');
   if (input && normalized) input.value=normalized;
 }
@@ -1206,7 +1280,7 @@ function setColor(nextColor,{remember=true}={}) {
   syncColorUI();
   if (remember) rememberColor(normalized);
   const a=selectedAnn();
-  if (a && ['arrow','box','highlight','draw','text','blur'].includes(a.type)) {
+  if (a && ['arrow','box','highlight','draw','text','blur','line','ellipse','step','stamp'].includes(a.type)) {
     recordHistory();
     a.color=normalized;
     saveAnns();
@@ -1340,7 +1414,7 @@ async function warmGalleryComposite(item) {
     off.height=canvasSize?.height || bg.naturalHeight;
     const oc=off.getContext('2d');
     oc.drawImage(bg,0,0);
-    annotations.forEach(a=>drawAnn(oc,a,bg,off.width,off.height,false));
+    drawAnnList(oc,annotations,bg,off.width,off.height,false);
     cachedEntry.dataURL=off.toDataURL('image/png');
     return cachedEntry.dataURL;
   })();
@@ -1457,10 +1531,29 @@ function resizeCanvasTo(width, height) {
 }
 
 // ── Tool selection ─────────────────────────────────────────────────────────────
+// Variants share a rail button, which shows the one used last; the props bar offers the others.
+const TOOL_VARIANTS = {
+  arrow:     [['arrow', '↗', 'Arrow', 'Arrow'], ['line', '╱', 'Line', 'Line']],
+  box:       [['box', '▭', 'Box', 'Box'], ['ellipse', '◯', 'Ellipse', 'Ellipse']],
+  highlight: [['highlight', '▬', 'Highlight', 'High'], ['spotlight', '◐', 'Spotlight', 'Spot']],
+  blur:      [['blur', '≋', 'Blur', 'Blur'], ['pixelate', '▦', 'Pixelate', 'Pixel']],
+};
+const toolGroupOf = t => Object.keys(TOOL_VARIANTS).find(g => TOOL_VARIANTS[g].some(([id]) => id === t)) || t;
+
 function setTool(t) {
   if (cropMode) cancelCropMode();
   tool = t;
-  document.querySelectorAll('.tbtn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  const group = toolGroupOf(t);
+  document.querySelectorAll('.tbtn').forEach(b => {
+    const active = (b.dataset.group || b.dataset.tool) === group;
+    b.classList.toggle('active', active);
+    const variant = active && b.dataset.group && TOOL_VARIANTS[group].find(([id]) => id === t);
+    if (!variant) return;
+    b.dataset.tool = t;
+    b.querySelector('.ic').textContent = variant[1];
+    b.querySelector('.lbl').textContent = variant[3];
+  });
+  renderToolVariants(group);
   document.getElementById('p-tool').textContent =
     t === 'select' ? 'Select' : t.charAt(0).toUpperCase() + t.slice(1);
   canvas.style.cursor = t === 'text' ? 'text' : t === 'select' ? 'default' : 'crosshair';
@@ -1470,12 +1563,46 @@ function setTool(t) {
 }
 document.querySelectorAll('.tbtn').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
 
+function renderToolVariants(group) {
+  const box = document.getElementById('tool-variants');
+  const variants = TOOL_VARIANTS[group];
+  box.hidden = !variants;
+  document.getElementById('p-tool').hidden = !!variants;
+  if (!variants) return;
+  box.replaceChildren(...variants.map(([id, icon, label]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = `${icon} ${label}`;
+    b.className = id === tool ? 'on' : '';
+    b.addEventListener('click', () => setTool(id));
+    return b;
+  }));
+}
+
 // ── Color swatches ─────────────────────────────────────────────────────────────
-document.querySelectorAll('.sw').forEach(s => {
-  s.addEventListener('click', () => {
-    setColor(s.dataset.c);
-  });
+document.querySelector('.swatches').addEventListener('click', e => {
+  const s = e.target.closest('.sw');
+  if (s) setColor(s.dataset.c);
 });
+
+// Settings → Brand can swap the standard swatches for the company's colours.
+const DEFAULT_SWATCHES_HTML = document.querySelector('.swatches').innerHTML;
+function renderSwatches(brand) {
+  const box = document.querySelector('.swatches');
+  const colors = brand?.usePalette && brand.palette?.length ? brand.palette : null;
+  const key = colors ? colors.join(',') : '';
+  if ((box.dataset.brand || '') === key) return;
+  box.dataset.brand = key;
+  if (!colors) box.innerHTML = DEFAULT_SWATCHES_HTML;
+  else {
+    box.replaceChildren(...colors.map(c => {
+      const d = document.createElement('div');
+      d.className = 'sw'; d.dataset.c = c; d.title = c; d.style.background = c;
+      return d;
+    }));
+  }
+  syncColorUI();
+}
 
 document.getElementById('btn-color-picker').addEventListener('click', () => {
   document.getElementById('custom-color-input').click();
@@ -1522,6 +1649,16 @@ document.getElementById('insp-text-size').addEventListener('input', e => mutateS
   }
 }));
 document.getElementById('insp-duplicate').addEventListener('click', duplicateSelected);
+document.getElementById('insp-step-n').addEventListener('input', e => mutateSelected(a => {
+  if (a.type === 'step') a.n = Math.max(0, Math.min(999, Math.round(+e.target.value || 0)));
+}));
+document.getElementById('insp-step-renumber').addEventListener('click', () => {
+  if (!anns.some(a => a.type === 'step')) return;
+  recordHistory();
+  let n = 0;
+  anns.forEach(a => { if (a.type === 'step') a.n = ++n; });
+  saveAnns(); render(); updateInspector();
+});
 document.getElementById('insp-back').addEventListener('click', () => moveLayer(-1));
 document.getElementById('insp-forward').addEventListener('click', () => moveLayer(1));
 document.getElementById('insp-bottom').addEventListener('click', () => moveLayer('bottom'));
@@ -1603,10 +1740,11 @@ function onCropDocumentUp(e) {
 // ── Bounds ────────────────────────────────────────────────────────────────────
 function getBounds(a) {
   switch (a.type) {
-    case 'arrow':
+    case 'arrow': case 'line':
       return { x: Math.min(a.x1,a.x2), y: Math.min(a.y1,a.y2),
                w: Math.abs(a.x2-a.x1), h: Math.abs(a.y2-a.y1) };
     case 'box': case 'highlight': case 'blur': case 'image':
+    case 'ellipse': case 'spotlight': case 'step': case 'stamp':
       return { x: a.w<0?a.x+a.w:a.x, y: a.h<0?a.y+a.h:a.y,
                w: Math.abs(a.w), h: Math.abs(a.h) };
     case 'draw': {
@@ -1629,20 +1767,29 @@ function getBounds(a) {
 
 // ── Handles ───────────────────────────────────────────────────────────────────
 function getHandles(a) {
-  if (a.type === 'arrow') {
+  if (a.type === 'arrow' || a.type === 'line') {
     const handles = [
       { id:'tail', x:a.x1, y:a.y1, cursor:'crosshair' },
       { id:'head', x:a.x2, y:a.y2, cursor:'crosshair' },
     ];
     const dx=a.x2-a.x1, dy=a.y2-a.y1, len=Math.hypot(dx,dy);
-    if (len>20) {
+    if (a.type === 'arrow' && len>20) {
       const mx=(a.x1+a.x2)/2, my=(a.y1+a.y2)/2;
       const offset=Math.max((a.sw||toCanvasSize(3))+toCanvasSize(14), toCanvasSize(20));
       handles.push({ id:'width', x:mx+(-dy/len)*offset, y:my+(dx/len)*offset, cursor:'crosshair' });
     }
     return handles;
   }
-  if (['box','highlight','blur','text','image'].includes(a.type)) {
+  if (a.type === 'step') {   // stays round: corners only
+    const b=getBounds(a);
+    return [
+      { id:'nw', x:b.x,     y:b.y,     cursor:'nwse-resize' },
+      { id:'ne', x:b.x+b.w, y:b.y,     cursor:'nesw-resize' },
+      { id:'se', x:b.x+b.w, y:b.y+b.h, cursor:'nwse-resize' },
+      { id:'sw', x:b.x,     y:b.y+b.h, cursor:'nesw-resize' },
+    ];
+  }
+  if (['box','highlight','blur','text','image','ellipse','spotlight','stamp'].includes(a.type)) {
     const b=getBounds(a), mx=b.x+b.w/2, my=b.y+b.h/2;
     return [
       { id:'nw', x:b.x,    y:b.y,    cursor:'nwse-resize' },
@@ -1681,12 +1828,12 @@ function computeAnchor(a, handleId) {
     case 'w':  anch={ mode:'ew', anchorX:b.x+b.w, y:b.y, h:b.h }; break;
     default:   anch={ mode:'corner', x:b.x+b.w, y:b.y+b.h }; break;
   }
-  if (a.type==='text') { anch.originalH=b.h; anch.originalFs=a.fs||16; }
+  if (a.type==='text'||a.type==='stamp') { anch.originalH=b.h; anch.originalFs=a.fs||16; }
   return anch;
 }
 
 function applyResize(a, mx, my) {
-  if (a.type === 'arrow') {
+  if (a.type === 'arrow' || a.type === 'line') {
     if (activeHandle.id==='tail')  { a.x1=mx; a.y1=my; }
     else if (activeHandle.id==='head') { a.x2=mx; a.y2=my; }
     else if (activeHandle.id==='width') {
@@ -1705,14 +1852,18 @@ function applyResize(a, mx, my) {
       const newH=Math.abs(my-anch.y);
       a.x=Math.min(mx,anch.x); a.y=Math.min(my,anch.y);
       a.w=Math.abs(mx-anch.x); a.h=newH;
-      if (a.type==='text'&&anch.originalH) a.fs=Math.max(8,Math.round(anch.originalFs*newH/anch.originalH));
+      if ((a.type==='text'||a.type==='stamp')&&anch.originalH) a.fs=Math.max(8,Math.round(anch.originalFs*newH/anch.originalH));
+      if (a.type==='step') {
+        const s=Math.max(a.w,a.h);
+        a.w=a.h=s; a.x=mx<anch.x?anch.x-s:anch.x; a.y=my<anch.y?anch.y-s:anch.y;
+      }
       break;
     }
     case 'ns': {
       const newH=Math.max(5,Math.abs(my-anch.anchorY));
       a.x=anch.x; a.w=anch.w;
       a.y=Math.min(my,anch.anchorY); a.h=newH;
-      if (a.type==='text'&&anch.originalH) a.fs=Math.max(8,Math.round(anch.originalFs*newH/anch.originalH));
+      if ((a.type==='text'||a.type==='stamp')&&anch.originalH) a.fs=Math.max(8,Math.round(anch.originalFs*newH/anch.originalH));
       break;
     }
     case 'ew':
@@ -1733,6 +1884,7 @@ function distToSeg(px,py,ax,ay,bx,by) {
 function hitTest(a,x,y) {
   const TOL=toCanvasSize(10);
   if (a.type==='arrow') return distToSeg(x,y,a.x1,a.y1,a.x2,a.y2)<Math.max(TOL,(a.sw||toCanvasSize(3))+toCanvasSize(8));
+  if (a.type==='line')  return distToSeg(x,y,a.x1,a.y1,a.x2,a.y2)<Math.max(TOL,(a.sw||toCanvasSize(3))/2+toCanvasSize(6));
   if (a.type==='draw')  return a.pts.some(p=>Math.hypot(x-p.x,y-p.y)<Math.max(TOL,(a.sw||toCanvasSize(3))+toCanvasSize(2)));
   const b=getBounds(a);
   return b ? (x>=b.x-TOL&&x<=b.x+b.w+TOL&&y>=b.y-TOL&&y<=b.y+b.h+TOL) : false;
@@ -1756,8 +1908,9 @@ function annShownNow(a) {
 
 function moveAnn(a,dx,dy) {
   switch(a.type) {
-    case 'arrow': a.x1+=dx;a.y1+=dy;a.x2+=dx;a.y2+=dy; break;
-    case 'box':case 'highlight':case 'blur':case 'text':case 'image': a.x+=dx;a.y+=dy; break;
+    case 'arrow': case 'line': a.x1+=dx;a.y1+=dy;a.x2+=dx;a.y2+=dy; break;
+    case 'box':case 'highlight':case 'blur':case 'text':case 'image':
+    case 'ellipse':case 'spotlight':case 'step':case 'stamp': a.x+=dx;a.y+=dy; break;
     case 'draw': a.pts=a.pts.map(p=>({x:p.x+dx,y:p.y+dy})); break;
   }
 }
@@ -1770,7 +1923,7 @@ function updateInspector() {
   const a = selectedAnn();
   document.getElementById('inspector-empty').style.display = a ? 'none' : 'block';
   document.getElementById('inspector-controls').style.display = a ? 'block' : 'none';
-  document.getElementById('inspector-type').textContent = a ? a.type : 'None';
+  document.getElementById('inspector-type').textContent = a ? annTypeName(a) : 'None';
   if (!a) { syncAnnTimingUI(); return; }
   const strokeControl=document.getElementById('insp-stroke');
   const opacityControl=document.getElementById('insp-opacity');
@@ -1780,6 +1933,8 @@ function updateInspector() {
   strokeControl.value = Math.max(1, Math.min(+strokeControl.max, Math.round(toScreenSize(a.sw || a.fs || currentCanvasStroke()))));
   opacityControl.value = Math.round((a.opacity ?? 1) * 100);
   document.getElementById('insp-text-size').value = Math.round(toScreenSize(a.fs || currentCanvasTextSize()));
+  document.getElementById('insp-step').hidden = a.type !== 'step';
+  if (a.type === 'step') document.getElementById('insp-step-n').value = a.n ?? 1;
   syncAnnTimingUI();
 }
 
@@ -1841,7 +1996,7 @@ function render() {
   if (bgImage) ctx.drawImage(bgImage,0,0);
   // Outside its time range an annotation is fully hidden, even when selected (its bar in
   // the video lane still shows it and can select it).
-  anns.forEach(a=>{ if (annShownNow(a)) drawAnn(ctx,a); });
+  drawAnnList(ctx, anns.filter(annShownNow));
   if (mediaEdit) syncAnnTimingUI();
   if (selectedIdx>=0 && selectedIdx<anns.length && annShownNow(anns[selectedIdx]))
     drawSelectionBounds(anns[selectedIdx]);
@@ -1858,7 +2013,7 @@ function drawCropOverlay() {
     ctx.save();
     ctx.beginPath(); ctx.rect(r.x,r.y,r.w,r.h); ctx.clip();
     if (bgImage) ctx.drawImage(bgImage,0,0);
-    anns.forEach(a=>drawAnn(ctx,a));
+    drawAnnList(ctx, anns);
     ctx.restore();
     ctx.strokeStyle=accentRGBA(1);
     ctx.lineWidth=Math.max(1,toCanvasSize(2));
@@ -1894,6 +2049,250 @@ function drawBlockArrow(c, x1, y1, x2, y2, sw) {
   c.fill();
 }
 
+// Draws a list of annotations. Spotlights dim everything outside them together (one layer with
+// every spotlight cut out), so two spotlights don't darken each other.
+function drawAnnList(c, list, baseImage = bgImage, baseW = canvas.width, baseH = canvas.height, guides = true) {
+  drawSpotlights(c, list, baseW, baseH);
+  list.forEach(a => drawAnn(c, a, baseImage, baseW, baseH, guides));
+}
+
+function drawSpotlights(c, list, w, h) {
+  const spots = list.filter(a => a.type === 'spotlight');
+  if (!spots.length) return;
+  const layer = document.createElement('canvas');
+  layer.width = w; layer.height = h;
+  const lc = layer.getContext('2d');
+  lc.fillStyle = `rgba(0,0,0,${Math.min(.85, .6 * Math.max(...spots.map(s => s.opacity ?? 1)))})`;
+  lc.fillRect(0, 0, w, h);
+  lc.globalCompositeOperation = 'destination-out';
+  lc.fillStyle = '#000';   // opaque, so each cut-out removes the dimming completely
+  spots.forEach(s => {
+    const b = getBounds(s);
+    rrect(lc, b.x, b.y, b.w, b.h, Math.min(12, b.w / 4, b.h / 4));
+    lc.fill();
+  });
+  c.drawImage(layer, 0, 0);
+}
+
+// Pixelate: each block becomes the average colour of its pixels, then it's scaled back up without
+// smoothing. Averaging (not the browser's downscale, which samples) is what wipes out text.
+function drawPixelated(c, src, x, y, w, h, strength) {
+  const block = Math.max(4, strength * 1.5);
+  const cols = Math.max(1, Math.round(w / block)), rows = Math.max(1, Math.round(h / block));
+  const small = document.createElement('canvas');
+  small.width = cols; small.height = rows;
+  const sc = small.getContext('2d');
+  try {
+    const W = src.width, H = src.height, px = src.getContext('2d').getImageData(0, 0, W, H).data;
+    const out = sc.createImageData(cols, rows);
+    for (let r = 0; r < rows; r++) {
+      const y0 = Math.floor(r * H / rows), y1 = Math.max(y0 + 1, Math.floor((r + 1) * H / rows));
+      for (let q = 0; q < cols; q++) {
+        const x0 = Math.floor(q * W / cols), x1 = Math.max(x0 + 1, Math.floor((q + 1) * W / cols));
+        const sum = [0, 0, 0, 0];
+        for (let yy = y0; yy < y1; yy++) {
+          for (let xx = x0; xx < x1; xx++) {
+            const i = (yy * W + xx) * 4;
+            sum[0] += px[i]; sum[1] += px[i + 1]; sum[2] += px[i + 2]; sum[3] += px[i + 3];
+          }
+        }
+        const n = (y1 - y0) * (x1 - x0), o = (r * cols + q) * 4;
+        for (let k = 0; k < 4; k++) out.data[o + k] = sum[k] / n;
+      }
+    }
+    sc.putImageData(out, 0, 0);
+  } catch {
+    sc.drawImage(src, 0, 0, cols, rows);   // pixels unreadable: the browser's downscale will do
+  }
+  c.save();
+  c.imageSmoothingEnabled = false;
+  c.drawImage(small, x, y, w, h);
+  c.restore();
+}
+
+// A numbered circle. Light colours get a dark number so it stays readable.
+function drawStepBadge(c, a) {
+  const b = getBounds(a), r = Math.min(b.w, b.h) / 2;
+  if (r < 1) return;
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, label = String(a.n ?? 1);
+  c.save();
+  c.shadowColor = 'rgba(0,0,0,.28)'; c.shadowBlur = r * .3; c.shadowOffsetY = r * .06;
+  c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2);
+  c.fillStyle = a.color; c.fill();
+  c.restore();
+  c.lineWidth = Math.max(1, r * .12); c.strokeStyle = 'rgba(255,255,255,.92)'; c.stroke();
+  c.fillStyle = readableOn(a.color);
+  c.font = `700 ${Math.round(r * (label.length > 2 ? .78 : label.length > 1 ? .92 : 1.08))}px Poppins,system-ui`;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(label, cx, cy + r * .05);
+}
+
+function readableOn(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16);
+  return (.299 * (n >> 16) + .587 * (n >> 8 & 255) + .114 * (n & 255)) / 255 > .62 ? '#111' : '#fff';
+}
+
+const annTypeName = a => (a.type === 'blur' && a.mode === 'pixelate' ? 'pixelate' : a.type);
+
+// ── Stamps and watermarks (Settings → Brand) ──
+const STAMPS = {
+  confidential: { text: 'CONFIDENTIAL', color: '#DC2626' },
+  internal:     { text: 'INTERNAL',     color: '#2563EB' },
+  draft:        { text: 'DRAFT',        color: '#D97706' },
+  approved:     { text: 'APPROVED',     color: '#16A34A' },
+};
+const WATERMARK_WIDTH = { small: .1, medium: .16, large: .24 };   // share of the image width
+
+// style 'stamp': a bordered rubber stamp. style 'watermark': plain text with a soft shadow.
+function stampFont(fs) { return `800 ${Math.round(fs)}px Poppins,system-ui`; }
+function stampSpacing(a) { return a.style === 'watermark' ? 0 : a.fs * .08; }
+
+function measureStamp(a) {
+  ctx.save();
+  ctx.font = stampFont(a.fs);
+  ctx.letterSpacing = `${stampSpacing(a)}px`;
+  const tw = ctx.measureText(a.text).width;
+  ctx.restore();
+  return a.style === 'watermark' ? { w: tw + a.fs * .4, h: a.fs * 1.4 } : { w: tw + a.fs * 1.4, h: a.fs * 1.9 };
+}
+
+function drawStamp(c, a) {
+  const b = getBounds(a), fs = a.fs || 24;
+  c.font = stampFont(fs);
+  c.letterSpacing = `${stampSpacing(a)}px`;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  if (a.style === 'watermark') {
+    c.shadowColor = 'rgba(0,0,0,.5)'; c.shadowBlur = fs * .3;
+    c.fillStyle = a.color || '#FFFFFF';
+    c.fillText(a.text, cx, cy);
+    return;
+  }
+  const lw = Math.max(2, fs * .12);
+  rrect(c, b.x + lw / 2, b.y + lw / 2, b.w - lw, b.h - lw, fs * .25);
+  c.fillStyle = 'rgba(255,255,255,.85)'; c.fill();
+  c.lineWidth = lw; c.strokeStyle = a.color; c.stroke();
+  c.fillStyle = a.color;
+  c.fillText(a.text, cx, cy + fs * .05);
+}
+
+function cornerPlacement(corner, w, h) {
+  const m = Math.round(Math.min(canvas.width, canvas.height) * .025);
+  return { x: corner[1] === 'l' ? m : canvas.width - w - m, y: corner[0] === 't' ? m : canvas.height - h - m };
+}
+
+function stampAnn({ text, color }, corner = 'tr') {
+  const a = { type: 'stamp', style: 'stamp', text, color, fs: Math.max(14, Math.round(Math.min(canvas.width, canvas.height) * .045)) };
+  const size = measureStamp(a);
+  return { ...a, ...cornerPlacement(corner, size.w, size.h), w: size.w, h: size.h };
+}
+
+// The watermark Settings → Brand describes, or null when there's nothing to show.
+async function watermarkAnn(brand) {
+  const width = canvas.width * (WATERMARK_WIDTH[brand.watermarkSize] || .16);
+  if (brand.watermark === 'logo' && brand.logo) {
+    const src = await window.electronAPI?.brandLogoGet?.();
+    const img = src && await imageReady(src).catch(() => null);
+    if (!img?.naturalWidth) return null;
+    const w = Math.max(24, width), h = w * img.naturalHeight / img.naturalWidth;
+    return { type: 'image', src, ...cornerPlacement(brand.watermarkCorner, w, h), w, h, opacity: brand.watermarkOpacity, brand: 'watermark' };
+  }
+  if (brand.watermark === 'name' && brand.name) {
+    const a = { type: 'stamp', style: 'watermark', text: brand.name, color: '#FFFFFF', fs: Math.max(12, Math.round(width / 5)), opacity: brand.watermarkOpacity, brand: 'watermark' };
+    const size = measureStamp(a);
+    return { ...a, ...cornerPlacement(brand.watermarkCorner, size.w, size.h), w: size.w, h: size.h };
+  }
+  return null;
+}
+
+function addBrandAnns(list, { replaceWatermark = false } = {}) {
+  if (!list.length) return;
+  recordHistory();
+  if (replaceWatermark) anns = anns.filter(x => x.brand !== 'watermark');   // one watermark per capture
+  anns.push(...list);
+  selectedIdx = anns.length - 1;
+  saveAnns(); render(); updateInspector();
+}
+
+// Tools → Add Watermark.
+async function addWatermark() {
+  const brand = appSettingsCache?.brand || {};
+  const a = bgImage && await watermarkAnn({ ...brand, watermark: brand.watermark === 'off' ? (brand.logo ? 'logo' : 'name') : brand.watermark });
+  if (!a) {
+    toast('Add a logo or company name in Settings → Brand first');
+    window.JPSettings?.open('brand');
+    return;
+  }
+  addBrandAnns([a], { replaceWatermark: true });
+}
+
+// A new capture gets the watermark and stamp Settings → Brand asks for. With auto-copy on,
+// the clipboard gets them too.
+async function applyBrandDefaults() {
+  const brand = appSettingsCache?.brand;
+  if (!brand || !bgImage) return;
+  const list = [];
+  if (brand.autoWatermark && brand.watermark !== 'off') {
+    const w = await watermarkAnn(brand);
+    if (w) list.push(w);
+  }
+  if (STAMPS[brand.stamp]) list.push(stampAnn({ ...STAMPS[brand.stamp], text: tr(STAMPS[brand.stamp].text) }));
+  if (!list.length) return;
+  anns.push(...list);
+  saveAnns(); render();
+  if (appSettingsCache?.autoCopyAfterCapture && !appSettingsCache?.checkSensitive) window.electronAPI?.editorCopy(compositeDataURL());
+}
+
+function showStampChooser() {
+  const box = document.getElementById('stamp-choices');
+  const choose = stamp => {
+    document.getElementById('stamp-backdrop').classList.remove('on');
+    if (!bgImage) return;
+    addBrandAnns([stampAnn({ ...stamp, text: tr(stamp.text) }, 'tr')]);
+  };
+  box.replaceChildren(
+    ...Object.values(STAMPS).map(stamp => {
+      const b = document.createElement('button');
+      b.textContent = stamp.text;
+      b.style.setProperty('--stamp', stamp.color);
+      b.addEventListener('click', () => choose(stamp));
+      return b;
+    }),
+    Object.assign(document.createElement('button'), {
+      className: 'custom', textContent: 'Custom…',
+      onclick: async () => {
+        document.getElementById('stamp-backdrop').classList.remove('on');
+        const text = await askText('Stamp text', 'FOR REVIEW');
+        if (text) choose({ text: text.toUpperCase().slice(0, 40), color: color });
+      },
+    }));
+  box.querySelector('.custom').style.setProperty('--stamp', 'var(--fg-muted)');
+  document.querySelectorAll('.toolbar-menu[open]').forEach(menu => menu.removeAttribute('open'));
+  document.getElementById('stamp-backdrop').classList.add('on');
+}
+document.getElementById('stamp-cancel').addEventListener('click', () => document.getElementById('stamp-backdrop').classList.remove('on'));
+document.getElementById('btn-stamp').addEventListener('click', showStampChooser);
+document.getElementById('btn-watermark').addEventListener('click', () => {
+  document.querySelectorAll('.toolbar-menu[open]').forEach(menu => menu.removeAttribute('open'));
+  addWatermark();
+});
+
+function nextStepNumber() {
+  return anns.reduce((max, a) => (a.type === 'step' ? Math.max(max, a.n || 0) : max), 0) + 1;
+}
+
+// A step badge centred on a click, or spanning a drag.
+function stepAnnAt(x0, y0, x1, y1, col, n) {
+  const drag = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+  if (drag > toCanvasSize(8)) {
+    return { type:'step', x: x1 < x0 ? x0 - drag : x0, y: y1 < y0 ? y0 - drag : y0, w: drag, h: drag, n, color: col };
+  }
+  const d = toCanvasSize(Math.max(28, sw * 2.2));
+  return { type:'step', x: x0 - d / 2, y: y0 - d / 2, w: d, h: d, n, color: col };
+}
+
 // drawAnn accepts a ctxArg so it can be called for offscreen compositing too
 // guides: on-screen editing aids (the dashed blur outline). Off for anything exported or copied.
 function drawAnn(c, a, baseImage = bgImage, baseW = canvas.width, baseH = canvas.height, guides = true) {
@@ -1908,6 +2307,24 @@ function drawAnn(c, a, baseImage = bgImage, baseW = canvas.width, baseH = canvas
       drawBlockArrow(c, a.x1, a.y1, a.x2, a.y2, a.sw||3);
       break;
     case 'box': c.strokeRect(a.x,a.y,a.w,a.h); break;
+    case 'ellipse': {
+      const b=getBounds(a);
+      c.beginPath(); c.ellipse(b.x+b.w/2,b.y+b.h/2,Math.max(1,b.w/2),Math.max(1,b.h/2),0,0,Math.PI*2); c.stroke();
+      break;
+    }
+    case 'line':
+      c.beginPath(); c.moveTo(a.x1,a.y1); c.lineTo(a.x2,a.y2); c.stroke();
+      break;
+    case 'step': drawStepBadge(c,a); break;
+    case 'stamp': drawStamp(c,a); break;
+    case 'spotlight':
+      // The dimming is drawn for every spotlight at once (drawSpotlights); this is just the outline.
+      if (guides) {
+        const b=getBounds(a);
+        c.globalAlpha=1; c.strokeStyle=accentRGBA(.5); c.lineWidth=1; c.setLineDash([4,4]);
+        c.strokeRect(b.x,b.y,b.w,b.h); c.setLineDash([]);
+      }
+      break;
     case 'highlight':
       c.save(); c.globalAlpha=.42; c.fillRect(a.x,a.y,a.w,a.h); c.restore(); break;
     case 'draw':
@@ -1953,8 +2370,8 @@ function drawAnn(c, a, baseImage = bgImage, baseW = canvas.width, baseH = canvas
       if (baseImage) {
         const off=document.createElement('canvas'); off.width=bw; off.height=bh;
         const oc=off.getContext('2d'); oc.drawImage(baseImage,-bx,-by,baseW,baseH);
-        c.save(); c.filter=`blur(${Math.max(1,a.sw*2.5)}px)`;
-        c.drawImage(off,bx,by,bw,bh); c.restore();
+        if (a.mode==='pixelate') drawPixelated(c,off,bx,by,bw,bh,a.sw||toCanvasSize(15));
+        else { c.save(); c.filter=`blur(${Math.max(1,a.sw*2.5)}px)`; c.drawImage(off,bx,by,bw,bh); c.restore(); }
       }
       if (annOpacity > 1) {
         c.save();
@@ -1977,7 +2394,7 @@ function drawSelectionBounds(a) {
   const b = getBounds(a);
   if (!b) return;
   ctx.save();
-  if (a.type !== 'arrow') {
+  if (a.type !== 'arrow' && a.type !== 'line') {
     const pad=8;
     ctx.strokeStyle='rgba(255,255,255,.8)'; ctx.lineWidth=1.5;
     ctx.setLineDash([5,3]);
@@ -2021,6 +2438,10 @@ function rrect(c,x,y,w,h,r) {
 
 // ── Live preview ──────────────────────────────────────────────────────────────
 function preview(cx,cy) {
+  if (tool==='spotlight') {   // shown together with the other spotlights, as it will be drawn
+    anns.push({type:'spotlight',x:sx,y:sy,w:cx-sx,h:cy-sy}); render(); anns.pop();
+    return;
+  }
   render();
   const stroke = currentCanvasStroke();
   ctx.save();
@@ -2033,7 +2454,15 @@ function preview(cx,cy) {
     ctx.strokeRect(sx,sy,cx-sx,cy-sy);
   } else if (tool==='highlight') {
     ctx.save(); ctx.globalAlpha=.42; ctx.fillRect(sx,sy,cx-sx,cy-sy); ctx.restore();
-  } else if (tool==='blur') {
+  } else if (tool==='ellipse') {
+    ctx.beginPath();
+    ctx.ellipse((sx+cx)/2,(sy+cy)/2,Math.max(1,Math.abs(cx-sx)/2),Math.max(1,Math.abs(cy-sy)/2),0,0,Math.PI*2);
+    ctx.stroke();
+  } else if (tool==='line') {
+    ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(cx,cy); ctx.stroke();
+  } else if (tool==='step') {
+    drawStepBadge(ctx, stepAnnAt(sx,sy,cx,cy,color,nextStepNumber()));
+  } else if (tool==='blur' || tool==='pixelate') {
     ctx.strokeStyle=accentRGBA(.6); ctx.setLineDash([4,4]);
     ctx.strokeRect(sx,sy,cx-sx,cy-sy); ctx.setLineDash([]);
   } else if (tool==='draw' && livePath.length>1) {
@@ -2068,7 +2497,7 @@ canvas.addEventListener('mousedown', e => {
       if (ann.type==='text'&&!ann.w) {
         const tb=getBounds(ann); ann.x=tb.x; ann.y=tb.y; ann.w=tb.w; ann.h=tb.h;
       }
-      if (ann.type!=='arrow') resizeAnchor=computeAnchor(ann,h.id);
+      if (ann.type!=='arrow'&&ann.type!=='line') resizeAnchor=computeAnchor(ann,h.id);
       canvas.style.cursor=h.cursor;
       return;
     }
@@ -2099,7 +2528,7 @@ canvas.addEventListener('mousedown', e => {
         if (ann.type==='text'&&!ann.w) {
           const tb=getBounds(ann); ann.x=tb.x; ann.y=tb.y; ann.w=tb.w; ann.h=tb.h;
         }
-        if (ann.type!=='arrow') resizeAnchor=computeAnchor(ann,h.id);
+        if (ann.type!=='arrow'&&ann.type!=='line') resizeAnchor=computeAnchor(ann,h.id);
         canvas.style.cursor=h.cursor;
         return;
       }
@@ -2192,6 +2621,16 @@ canvas.addEventListener('mouseup', e => {
     ann={type:'blur',x:sx,y:sy,w:x-sx,h:y-sy,sw:stroke};
   else if (tool==='draw' && livePath.length>1)
     ann={type:'draw',pts:[...livePath],color,sw:stroke};
+  else if (tool==='ellipse' && Math.abs(x-sx)>4&&Math.abs(y-sy)>4)
+    ann={type:'ellipse',x:sx,y:sy,w:x-sx,h:y-sy,color,sw:stroke};
+  else if (tool==='line' && (Math.abs(x-sx)>4||Math.abs(y-sy)>4))
+    ann={type:'line',x1:sx,y1:sy,x2:x,y2:y,color,sw:stroke};
+  else if (tool==='spotlight' && Math.abs(x-sx)>4&&Math.abs(y-sy)>4)
+    ann={type:'spotlight',x:sx,y:sy,w:x-sx,h:y-sy};
+  else if (tool==='pixelate' && Math.abs(x-sx)>4&&Math.abs(y-sy)>4)
+    ann={type:'blur',mode:'pixelate',x:sx,y:sy,w:x-sx,h:y-sy,sw:stroke};
+  else if (tool==='step')
+    ann=stepAnnAt(sx,sy,x,y,color,nextStepNumber());
   if (ann) { recordHistory(); anns.push(ann); ensureCanvasContains(getBounds(ann)); selectedIdx=anns.length-1; saveAnns(); updateInspector(); }
   render();
 });
@@ -2202,9 +2641,19 @@ canvas.addEventListener('click', e => {
   spawnTextInput(e,coords(e),color,null,null);
 });
 
-canvas.addEventListener('dblclick', e => {
+canvas.addEventListener('dblclick', async e => {
   const {x,y}=coords(e);
   const idx=findHit(x,y);
+  if (idx>=0 && anns[idx].type==='stamp') {
+    const a=anns[idx], text=await askText(a.style==='watermark' ? 'Watermark text' : 'Stamp text', a.text);
+    if (!text) return;
+    recordHistory();
+    a.text=a.style==='watermark' ? text.slice(0,80) : text.toUpperCase().slice(0,40);
+    const cx=a.x+a.w/2, size=measureStamp(a);
+    a.w=size.w; a.h=size.h; a.x=cx-a.w/2;
+    saveAnns(); render(); updateInspector();
+    return;
+  }
   if (idx<0||anns[idx].type!=='text') return;
   e.preventDefault();
   const a=anns[idx];
@@ -2364,6 +2813,8 @@ function spawnTextInput(e,canvasPos,col,existingAnn,existingIdx) {
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
   if (e.target.tagName==='INPUT') return;
+  // Space and Enter belong to a focused control (a button, a swatch, a Recents card).
+  if ((e.code==='Space' || e.key==='Enter') && e.target.closest?.('button, a, summary, select, textarea, [role=button], [tabindex="0"]')) return;
   if (cropMode && e.key==='Escape') { cancelCropMode(); e.preventDefault(); return; }
   if (cropMode && e.key==='Enter') { applyCrop(); e.preventDefault(); return; }
   if (e.code==='Space') { setPanMode(true); e.preventDefault(); return; }
@@ -2375,7 +2826,7 @@ document.addEventListener('keydown',e=>{
     deleteSelected(); e.preventDefault(); return;
   }
   if (e.key==='Escape'&&selectedIdx>=0) { selectedIdx=-1; render(); updateInspector(); return; }
-  const map={a:'arrow',t:'text',b:'box',h:'highlight',r:'blur',d:'draw',s:'select'};
+  const map={a:'arrow',l:'line',t:'text',b:'box',o:'ellipse',h:'highlight',f:'spotlight',r:'blur',p:'pixelate',d:'draw',n:'step',s:'select'};
   if (!e.metaKey&&!e.ctrlKey&&map[e.key]) setTool(map[e.key]);
 });
 
@@ -2404,13 +2855,15 @@ function toast(msg) {
   setTimeout(()=>t.classList.remove('on'),2200);
 }
 
-function flatDataURL() { return canvas.toDataURL('image/png'); }
+// The document as exported: never the on-screen canvas, which also has selection handles,
+// blur guides and the crop overlay.
+function flatDataURL() { return compositeDataURL(); }
 function compositeDataURL() {
   const off=document.createElement('canvas');
   off.width=canvas.width; off.height=canvas.height;
   const oc=off.getContext('2d');
   if (bgImage) oc.drawImage(bgImage,0,0);
-  anns.forEach(a=>drawAnn(oc,a,bgImage,off.width,off.height,false));
+  drawAnnList(oc,anns,bgImage,off.width,off.height,false);
   return off.toDataURL('image/png');
 }
 function flatJpegDataURL(quality=.9) {
@@ -2420,7 +2873,7 @@ function flatJpegDataURL(quality=.9) {
   oc.fillStyle='#fff'; oc.fillRect(0,0,off.width,off.height);
   // Draw the document, not the on-screen canvas (which has selection handles and guides).
   if (bgImage) oc.drawImage(bgImage,0,0);
-  anns.forEach(a=>drawAnn(oc,a,bgImage,off.width,off.height,false));
+  drawAnnList(oc,anns,bgImage,off.width,off.height,false);
   return off.toDataURL('image/jpeg',quality);
 }
 function originalImageDataURL() {
@@ -2570,11 +3023,12 @@ function syncResizeDimension(changed) {
 }
 
 async function doCopy() {
-  if (window.electronAPI) { window.electronAPI.editorCopy(flatDataURL()); toast('Copied!'); }
+  if (!window.electronAPI || !await checkBeforeSharing('Copy')) return;
+  window.electronAPI.editorCopy(flatDataURL()); toast('Copied!');
 }
 
 async function doShare() {
-  if (!window.electronAPI) return;
+  if (!window.electronAPI || !await checkBeforeSharing('Share')) return;
   const ts=new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
   const r=await window.electronAPI.shareImage({imageDataURL:flatDataURL(),filename:`share-${ts}.png`});
   if (!r?.success) toast('Share failed');
@@ -2684,33 +3138,107 @@ async function doOCRTableCopy() {
   toast('Table copied for Excel');
 }
 
-function shouldRedact(text) {
-  return [
-    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
-    /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b/,
-    /\b(?:\d[ -]*?){13,19}\b/,
-    /\b(?:api[_-]?key|secret|token|password|passwd|bearer)\b/i,
-    /\b[A-Za-z0-9_\-]{24,}\b/,
-  ].some(rx=>rx.test(text));
+// Lines of words from the word-level OCR helper (a line's words share an obsId), each word
+// with its character range in the line text.
+function ocrWordLines(items) {
+  const lines = new Map();
+  items.forEach((item, i) => {
+    const key = item.obsId ?? `word-${i}`;
+    lines.set(key, [...(lines.get(key) || []), item]);
+  });
+  return [...lines.values()].map(words => {
+    let text = '';
+    const placed = words.map(w => {
+      if (text) text += ' ';
+      const start = text.length;
+      text += w.text;
+      return { ...w, start, end: text.length };
+    });
+    return { text, words: placed };
+  });
+}
+
+// Sensitive text in the image as [{ kind, x, y, w, h }] (canvas pixels), covering just the
+// words involved; null when text recognition isn't available.
+async function findSensitive() {
+  if (!window.electronAPI?.ocrTableImage || !window.RedactDetect) return null;
+  const r = await window.electronAPI.ocrTableImage({ imageDataURL: compositeDataURL() });
+  if (!r?.success) return null;
+  const found = [];
+  ocrWordLines(r.items || []).forEach(line => {
+    RedactDetect.detect(line.text).forEach(match => {
+      const words = line.words.filter(w => w.start < match.end && w.end > match.start);
+      if (!words.length) return;
+      const x = Math.min(...words.map(w => w.x)), y = Math.min(...words.map(w => w.y));
+      found.push({ kind: match.kind, x, y, w: Math.max(...words.map(w => w.x + w.w)) - x, h: Math.max(...words.map(w => w.y + w.h)) - y });
+    });
+  });
+  return found;
+}
+
+function redactionAnns(found) {
+  const pad = toCanvasSize(4);
+  return found.map(f => ({ type:'blur', x:f.x-pad, y:f.y-pad, w:f.w+pad*2, h:f.h+pad*2, sw:toCanvasSize(24), color:'#000000', opacity:1.95, redact:f.kind }));
+}
+
+function applyRedactions(found) {
+  recordHistory();
+  anns.push(...redactionAnns(found));
+  selectedIdx = anns.length - 1;
+  saveAnns(); render(); updateInspector();
 }
 
 async function doSmartRedact() {
-  const items=await runOCR();
-  if (!items) return;
-  const matches=items.filter(i=>shouldRedact(i.text));
-  if (!matches.length) { toast('No sensitive text found'); return; }
-  recordHistory();
-  const pad=toCanvasSize(5);
-  matches.forEach(i=>{
-    anns.push({type:'blur',x:i.x-pad,y:i.y-pad,w:i.w+pad*2,h:i.h+pad*2,sw:toCanvasSize(24),color:'#000000',opacity:1.95});
+  if (!bgImage) return;
+  toast('Looking for sensitive info…');
+  const found = await findSensitive();
+  if (found === null) { toast('Text recognition isn’t available'); return; }
+  if (!found.length) { toast('No sensitive info found'); return; }
+  applyRedactions(found);
+  toast(tr('Redacted {what}', { what: RedactDetect.describe(found, tr) }));
+}
+
+// Settings → Capture → "Check for sensitive info before sharing": look before an image leaves
+// the editor. An unchanged image isn't checked twice.
+let sensitiveChecked = null;
+async function checkBeforeSharing(verb) {
+  if (!appSettingsCache?.checkSensitive || !bgImage) return true;
+  const image = compositeDataURL();
+  let found = sensitiveChecked?.image === image ? sensitiveChecked.found : null;
+  if (!found) {
+    toast('Checking for sensitive info…');
+    found = await findSensitive();
+    if (found === null) return true;   // nothing to check with
+    sensitiveChecked = { image, found };
+  }
+  if (!found.length || sensitiveChecked.allowed) return true;
+  const choice = await askAboutSensitive(found, verb);
+  if (choice === 'redact') applyRedactions(found);
+  if (choice === 'anyway') sensitiveChecked.allowed = true;   // don't ask again about this same image
+  return choice !== null;
+}
+
+// Resolves 'redact', 'anyway' or null (cancel).
+function askAboutSensitive(found, verb) {
+  const back = document.getElementById('sensitive-backdrop');
+  document.getElementById('sensitive-text').textContent = tr('It shows {what}.', { what: RedactDetect.describe(found, tr) });
+  document.getElementById('sensitive-redact').textContent = tr(`Redact and ${verb}`);
+  document.getElementById('sensitive-anyway').textContent = tr(`${verb} Anyway`);
+  back.classList.add('on');
+  return new Promise(resolve => {
+    const done = choice => {
+      back.classList.remove('on');
+      ['sensitive-redact', 'sensitive-anyway', 'sensitive-cancel'].forEach(id => { document.getElementById(id).onclick = null; });
+      resolve(choice);
+    };
+    document.getElementById('sensitive-redact').onclick = () => done('redact');
+    document.getElementById('sensitive-anyway').onclick = () => done('anyway');
+    document.getElementById('sensitive-cancel').onclick = () => done(null);
   });
-  selectedIdx=anns.length-1;
-  saveAnns(); render(); updateInspector();
-  toast(`Redacted ${matches.length} item${matches.length===1?'':'s'}`);
 }
 
 async function doSave() {
-  if (!window.electronAPI) return;
+  if (!window.electronAPI || !await checkBeforeSharing('Save')) return;
   const ts=new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
   const r=await window.electronAPI.editorSave({imageDataURL:flatDataURL(),defaultName:`screenshot-${ts}.png`});
   if (r?.success) { toast('Saved!'); setTimeout(loadGallery,400); }
@@ -2731,7 +3259,7 @@ async function doSaveOriginal() {
 }
 
 async function doSaveJpg() {
-  if (!window.electronAPI) return;
+  if (!window.electronAPI || !await checkBeforeSharing('Save')) return;
   const ts=new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');
   const r=await window.electronAPI.editorSave({imageDataURL:flatJpegDataURL(.9),defaultName:`screenshot-${ts}.jpg`});
   if (r?.success) toast('JPEG saved');
@@ -2764,7 +3292,7 @@ function resetCanvasBounds() {
 async function showPermissions() {
   const status=await window.electronAPI?.permissionStatus?.();
   const msg=`Screen Recording: ${status?.screen || 'unknown'}`;
-  if (confirm(`${msg}\n\nOpen macOS Screen Recording settings?`)) window.electronAPI?.openScreenSettings?.();
+  if (window.confirm(`${tr(msg)}\n\n${tr('Open macOS Screen Recording settings?')}`)) window.electronAPI?.openScreenSettings?.();
 }
 
 let hotkeyDraft = {};
@@ -2844,8 +3372,11 @@ document.querySelectorAll('.hotkey-input').forEach(btn=>{
     btn.focus();
   });
   btn.addEventListener('keydown',e=>{
+    if (e.key==='Escape' && !btn.classList.contains('recording')) return;   // closes the dialog
+    if (e.key==='Tab' && !btn.classList.contains('recording')) return;      // moves between fields
     e.preventDefault();
     e.stopPropagation();
+    if (e.key==='Escape') { btn.classList.remove('recording'); renderHotkeyDraft(); return; }
     if (['Meta','Shift','Control'].includes(e.key)) { hotkeyCmdShiftHeld=(e.metaKey || e.ctrlKey) && e.shiftKey; return; }
     hotkeyCmdShiftHeld=false;
     const accelerator=acceleratorFromEvent(e);
@@ -2912,11 +3443,88 @@ function askText(title, value='') {
   });
 }
 
+// ── Keyboard access ──
+// Swatches and Recents cards are divs: Enter or Space acts like a click.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const target = e.target.closest?.('.sw[role=button], .gallery-item');
+  if (!target || e.target !== target) return;
+  e.preventDefault();
+  e.stopPropagation();
+  target.click();
+}, true);
+
+// Choice dialogs are announced as dialogs; opening one moves focus into it, Esc cancels it
+// and closing it puts focus back where it was.
+function enhanceDialog(back) {
+  const box = back.querySelector('.choice-box');
+  if (!box || back.dataset.dialogReady) return;
+  back.dataset.dialogReady = '1';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  const title = box.querySelector('h2');
+  if (title) {
+    title.id ||= `${back.id || 'dialog'}-title`;
+    box.setAttribute('aria-labelledby', title.id);
+  }
+  let opener = null;
+  new MutationObserver(() => {
+    const open = back.classList.contains('on');
+    if (open && !back.dataset.open) {
+      back.dataset.open = '1';
+      opener = document.activeElement;
+      requestAnimationFrame(() => {
+        if (box.contains(document.activeElement)) return;   // the dialog chose its own focus
+        (box.querySelector('input:not([type=hidden]), select, textarea') || box.querySelector('button, [tabindex="0"]'))?.focus();
+      });
+    } else if (!open && back.dataset.open) {
+      delete back.dataset.open;
+      const lost = box.contains(document.activeElement) || document.activeElement === document.body;
+      // A menu item that opened the dialog is hidden again by now: go back to its menu's button.
+      const target = opener?.closest?.('details:not([open])')?.querySelector('summary') || opener;
+      if (lost && target?.isConnected) target.focus();
+      opener = null;
+    }
+  }).observe(back, { attributes: true, attributeFilter: ['class'] });
+}
+document.querySelectorAll('.choice-backdrop').forEach(enhanceDialog);
+new MutationObserver(records => records.forEach(r => r.addedNodes.forEach(n => {
+  if (n.nodeType === 1 && n.matches('.choice-backdrop')) enhanceDialog(n);
+}))).observe(document.body, { childList: true });
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  const open = [...document.querySelectorAll('.choice-backdrop.on')].pop();
+  if (!open) return;
+  e.preventDefault();
+  const cancel = open.querySelector('[id$="-cancel"]') || [...open.querySelectorAll('button')].find(b => /^(cancel|close)$/i.test(b.textContent.trim()));
+  if (cancel) cancel.click(); else open.classList.remove('on');
+});
+
+// ── Translation (src/i18n.js) ──
+// Most text is translated as it appears; strings built from numbers or names use tr().
+const tr=(text,vars)=>window.JPi18n ? JPi18n.t(text,vars) : (vars ? String(text).replace(/\{(\w+)\}/g,(m,k)=>(k in vars ? vars[k] : m)) : text);
+// Everything asks through window.confirm (tests stub it); text already run through tr() passes unchanged.
+const nativeConfirm=window.confirm.bind(window);
+window.confirm=message=>nativeConfirm(tr(message));
+
 // Tools → Settings… (the old Preferences dialog now lives in the Settings panel).
 function showPrefs() {
   document.querySelectorAll('.toolbar-menu[open]').forEach(menu=>menu.removeAttribute('open'));
   window.JPSettings?.open();
 }
+
+// Pin to Screen (Tools menu, Recents context menu): the image floats above every window until
+// closed. From Tools it's the image as it looks right now, annotations included.
+async function pinToScreen(source) {
+  document.querySelectorAll('.toolbar-menu[open]').forEach(menu=>menu.removeAttribute('open'));
+  if (!source && !bgImage) { toast('No image loaded'); return; }
+  const r = await window.electronAPI?.pinImage?.(source || { dataURL: compositeDataURL() }).catch(() => null);
+  if (!r?.success) toast('Couldn’t pin that image');
+}
+document.getElementById('btn-pin-screen').addEventListener('click',()=>pinToScreen());
+// Captures saved without opening the editor (Settings → After a capture → Show a thumbnail).
+window.electronAPI?.onCapturesChanged?.(()=>loadGallery());
 
 function saveAnns() {
   if (mediaEdit) { scheduleVideoSessionSave(); return; }
@@ -3189,7 +3797,9 @@ async function deleteProject(project) {
 
   let trashFailed = 0;
   if (action === 'images') {
-    const ok = confirm(`This will move ${assigned.length} capture${assigned.length===1?'':'s'} assigned to "${project.name}" to the Trash. Continue?`);
+    const ok = window.confirm(assigned.length===1
+      ? tr('This will move 1 capture assigned to “{project}” to the Trash. Continue?', { project: project.name })
+      : tr('This will move {n} captures assigned to “{project}” to the Trash. Continue?', { n: assigned.length, project: project.name }));
     if (!ok) return;
     for (const filePath of assigned) {
       const r = await window.electronAPI.galleryDelete(filePath);
@@ -3218,7 +3828,7 @@ async function deleteProject(project) {
 function projectDeleteChoice(project, count) {
   return new Promise(resolve=>{
     const back=document.getElementById('choice-backdrop');
-    document.getElementById('choice-title').textContent=`Delete "${project.name}"?`;
+    document.getElementById('choice-title').textContent=tr('Delete “{project}”?', { project: project.name });
     document.getElementById('choice-message').textContent=
       `This project contains ${count} capture${count===1?'':'s'}. Delete only the folder to move captures back to All, or delete the images too.`;
     const done=value=>{
@@ -3284,7 +3894,7 @@ async function linkProjectFolder(project) {
 async function unlinkProjectFolder(project) {
   await window.electronAPI.projectFolderUnlink(project.id);
   await refreshLinkedFolders();
-  toast(`Unlinked "${project.name}" (the folder and its files are unchanged)`);
+  toast(tr('Unlinked “{project}” (the folder and its files are unchanged)', { project: project.name }));
   loadGallery();
 }
 
@@ -3333,10 +3943,12 @@ function renderProjects() {
     row.dataset.projectId=project.id;
     const link=linkedFolders[project.id];
     row.innerHTML=`<span>${link ? '🔗' : '📁'}</span><span class="project-name"></span>`;
-    row.querySelector('.project-name').textContent=project.name;
+    const nameEl=row.querySelector('.project-name');
+    nameEl.textContent=project.id==='all' ? tr('All Captures') : project.name;
+    if (project.id!=='all') nameEl.dataset.noI18n='';
     if (link) {
       // The sidebar is narrow: the 🔗 icon marks the link and the tooltip names the folder.
-      row.title=link.exists ? `Linked to ${link.path}` : `Linked folder not found: ${link.path}`;
+      row.title=link.exists ? tr('Linked to {path}', { path: link.path }) : tr('Linked folder not found: {path}', { path: link.path });
       if (!link.exists) {
         const f=document.createElement('span');
         f.className='project-folder missing';
@@ -3349,6 +3961,7 @@ function renderProjects() {
       more.className='project-menu-btn';
       more.textContent='⋯';
       more.title='Link a folder, show it in Finder…';
+      more.setAttribute('aria-label',tr('Project options'));
       more.addEventListener('click',e=>{ e.stopPropagation(); const r=more.getBoundingClientRect(); showProjectMenu(project,r.left,r.bottom+4); });
       row.appendChild(more);
       row.addEventListener('contextmenu',e=>{ e.preventDefault(); e.stopPropagation(); showProjectMenu(project,e.clientX,e.clientY); });
@@ -3356,6 +3969,7 @@ function renderProjects() {
       del.className='project-delete';
       del.textContent='×';
       del.title='Delete project';
+      del.setAttribute('aria-label',tr('Delete project'));
       del.addEventListener('click',e=>{e.stopPropagation(); deleteProject(project);});
       row.appendChild(del);
     }
@@ -3382,6 +3996,13 @@ document.getElementById('btn-undo').addEventListener('click',undo);
 document.getElementById('btn-redo').addEventListener('click',redo);
 document.getElementById('btn-copy').addEventListener('click',doCopy);
 document.getElementById('btn-share').addEventListener('click',doShare);
+// Export → Send to… (src/sharing.js): the open screenshot, once it's saved as a capture.
+window.JPSharing?.bind(document.getElementById('btn-send-to'),()=>{
+  if (!currentPath || mediaEdit) return null;
+  const item=galleryItemsByPath.get(currentPath);
+  return { filePath:currentPath, filename:currentPath.split(/[\\/]/).pop(), thumb:item?.thumb, time:item?.time, prepare:saveAnnsNow,
+    check:()=>checkBeforeSharing('Send') };
+});
 document.getElementById('btn-ocr').addEventListener('click',doOCRCopy);
 document.getElementById('btn-ocr-table').addEventListener('click',doOCRTableCopy);
 document.getElementById('btn-redact').addEventListener('click',doSmartRedact);
@@ -3425,7 +4046,11 @@ document.getElementById('project-name-input').addEventListener('keydown',e=>{
   if (e.key==='Enter') createProject();
   if (e.key==='Escape') hideProjectCreate();
 });
-document.getElementById('gallery-search').addEventListener('input',()=>loadGallery());
+let gallerySearchTimer=null;
+document.getElementById('gallery-search').addEventListener('input',()=>{
+  clearTimeout(gallerySearchTimer);
+  gallerySearchTimer=setTimeout(loadGallery,200);   // typing: search once the keys pause
+});
 
 const gallerySidebar=document.querySelector('.gallery-sidebar');
 const savedGalleryWidth=Number(localStorage.getItem(GALLERY_WIDTH_KEY));
@@ -3900,6 +4525,7 @@ function renderMediaClips() {
     chip.className = 'media-clip-chip';
     const name = document.createElement('span');
     name.className = 'media-clip-name';
+    name.dataset.noI18n = '';
     name.textContent = `${me.clips.length > 1 ? `${k + 1} · ` : ''}${c.item.filename}`;
     name.title = c.item.filename;
     chip.appendChild(name);
@@ -4322,7 +4948,7 @@ function mediaOverlayPainter(overlay, crop) {
   return (ctx, outW, outH, base, t) => {
     ctx.save();
     ctx.setTransform(outW / crop.w, 0, 0, outH / crop.h, 0, 0);
-    shifted.forEach(a => { if (annVisibleAt(a, t)) drawAnn(ctx, a, base, crop.w, crop.h, false); });
+    drawAnnList(ctx, shifted.filter(a => annVisibleAt(a, t)), base, crop.w, crop.h, false);
     ctx.restore();
   };
 }
@@ -4370,8 +4996,8 @@ function syncAnnTimingUI() {
   document.getElementById('insp-time-all').classList.toggle('on', !part);
   document.getElementById('insp-time-part').classList.toggle('on', part);
   document.getElementById('insp-time-range').hidden = !part;
-  document.getElementById('insp-t0').textContent = `From ${fmtMediaTime(a.t0 ?? 0)}`;
-  document.getElementById('insp-t1').textContent = `To ${fmtMediaTime(a.t1 ?? D)}`;
+  document.getElementById('insp-t0').textContent = tr('From {time}', { time: fmtMediaTime(a.t0 ?? 0) });
+  document.getElementById('insp-t1').textContent = tr('To {time}', { time: fmtMediaTime(a.t1 ?? D) });
 }
 
 // Rebuilt only when annotations, their timing or the selection change: this runs on every
@@ -4605,10 +5231,19 @@ document.getElementById('media-frame').addEventListener('click', async () => {
 async function openGalleryItem(filePath) {
   const result=await window.electronAPI.galleryLoad(filePath);
   if (!result) return false;
-  loadImageWithAnns(result.dataURL,filePath,result.anns,result.canvasSize);
+  const loaded=loadImageWithAnns(result.dataURL,filePath,result.anns,result.canvasSize);
   document.querySelectorAll('.gallery-item').forEach(el=>
     el.classList.toggle('current',el.dataset.fp===filePath));
+  await loaded;
   return true;
+}
+
+// Send to… a capture from Recents: with the check before sharing on, it opens in the editor so
+// the check reads exactly what will be sent.
+async function checkCaptureBeforeSending(filePath) {
+  if (!appSettingsCache?.checkSensitive) return true;
+  if (currentPath!==filePath && !(await openGalleryItem(filePath))) return false;
+  return checkBeforeSharing('Send');
 }
 
 async function renameGalleryItem(item) {
@@ -4624,7 +5259,7 @@ async function renameGalleryItem(item) {
 }
 
 async function deleteGalleryItem(item) {
-  if (!confirm(`Move ${item.filename} to the Trash?`)) return;
+  if (!window.confirm(tr('Move {name} to the Trash?', { name: item.filename }))) return;
   const r = await window.electronAPI.galleryDelete(item.filePath);
   if (!r?.success) { toast(r?.reason === 'trash' ? 'Couldn’t move it to the Trash' : 'Delete failed'); return; }
   removeGalleryPath(item.filePath);
@@ -4638,7 +5273,7 @@ async function deleteGalleryItem(item) {
 
 async function deleteGalleryTargets(filePaths) {
   if (!filePaths.length) return;
-  if (!confirm(`Move ${filePaths.length} capture${filePaths.length===1?'':'s'} to the Trash?`)) return;
+  if (!window.confirm(filePaths.length===1 ? tr('Move 1 capture to the Trash?') : tr('Move {n} captures to the Trash?', { n: filePaths.length }))) return;
   let failed = 0;
   for (const filePath of filePaths) {
     const r = await window.electronAPI.galleryDelete(filePath);
@@ -4650,7 +5285,7 @@ async function deleteGalleryTargets(filePaths) {
     } else failed++;
   }
   render();
-  toast(failed ? `${failed} couldn’t be moved to the Trash` : 'Moved to the Trash');
+  toast(failed ? tr('{n} couldn’t be moved to the Trash', { n: failed }) : 'Moved to the Trash');
   await loadGallery();
 }
 
@@ -4692,16 +5327,27 @@ function showGalleryContext(item,x,y) {
   if (!multi && !anyExternal) add(isPinned(item.filePath)?'Unpin':'Pin',()=>togglePin(item.filePath));
   if (!multi && !anyExternal) add('Rename',()=>renameGalleryItem(item));
   if (!multi) add('Reveal in Finder',()=>window.electronAPI.galleryReveal(item.filePath));
+  if (!multi && !isMediaItem(item)) add('Pin to Screen',()=>pinToScreen({ filePath:item.filePath }));
+  if (!multi && !anyExternal && !isMediaItem(item) && window.JPSharing?.available()) {
+    menu.appendChild(window.JPSharing.menuButton({ filePath:item.filePath, filename:item.filename, thumb:item.thumb, time:item.time,
+      prepare:()=>currentPath===item.filePath ? saveAnnsNow() : null, check:()=>checkCaptureBeforeSending(item.filePath) }));
+  }
   if (!anyExternal) {
     addProjectSubmenu();
     add('Remove from Project',()=>assignManyToProject(targets,'all'));
   }
   const mediaTargets=targets.map(fp=>galleryItemsByPath.get(fp)).filter(isMediaItem);
   if (multi && mediaTargets.length===targets.length) add('Combine into video',()=>enterMediaEdit(mediaTargets));
+  // Guides are made of screenshots; GIFs and videos in the selection are left out (the dialog says so).
+  const guideItems=targets.map(fp=>galleryItemsByPath.get(fp)).filter(Boolean);
+  if (window.JPGuide && guideItems.some(i=>!isMediaItem(i))) {
+    add('Create Guide…',()=>window.JPGuide.open(guideItems,{ title: getProjects().find(p=>p.id===activeProject())?.name || '' }));
+  }
   if (!anyExternal) add('Delete',()=>multi?deleteGalleryTargets(targets):deleteGalleryItem(item),'danger');
   menu.style.left=Math.min(x,window.innerWidth-210)+'px';
-  menu.style.top=Math.min(y,window.innerHeight-190)+'px';
   menu.style.display='block';
+  // Measured, so the last items stay on screen however many the menu has.
+  menu.style.top=Math.max(8,Math.min(y,window.innerHeight-menu.offsetHeight-8))+'px';
 }
 
 function showProjectSubmenu(anchor,targets) {
@@ -4752,12 +5398,24 @@ function hideGalleryContext() {
 document.addEventListener('click',hideGalleryContext);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')hideGalleryContext();});
 
+// While the search index is still reading captures, say so: results may be incomplete.
+function showSearchStatus(found) {
+  const el=document.getElementById('gallery-search-status');
+  el.hidden=!(found && found.enabled && found.pending);
+  if (!el.hidden) el.textContent=found.pending===1 ? tr('Still reading text in 1 capture…') : tr('Still reading text in {n} captures…', { n: found.pending });
+}
+
+let galleryLoadSeq=0;
 async function loadGallery() {
   if (!window.electronAPI) return;
+  const seq=++galleryLoadSeq;   // a slower, older load must not overwrite a newer one
   const assignments=getProjectAssignments();
   const items=await window.electronAPI.galleryList([...getGalleryPins(), ...Object.keys(assignments)]);
   galleryItemsByPath=new Map(items.map(item=>[item.filePath,item]));
   const q=document.getElementById('gallery-search').value.trim().toLowerCase();
+  // A search looks through every capture (names and the text in them), not just the recent ones.
+  const found=q ? await window.electronAPI.gallerySearch?.(q).catch(()=>null) : null;
+  found?.items.forEach(item=>galleryItemsByPath.set(item.filePath,item));
   const project=activeProject();
   let filtered=project==='all'
     ? items.filter(item=>!assignments[item.filePath])
@@ -4767,13 +5425,21 @@ async function loadGallery() {
     folder.items.forEach(item=>galleryItemsByPath.set(item.filePath,item));
     filtered=filtered.concat(folder.items);
   }
-  filtered=q?filtered.filter(item=>item.filename.toLowerCase().includes(q)):filtered;
+  if (q && found) {
+    const inView=project==='all' ? ()=>true : fp=>assignments[fp]===project;
+    const linkedMatches=filtered.filter(item=>item.external && item.filename.toLowerCase().includes(q));
+    filtered=found.items.filter(item=>inView(item.filePath)).concat(linkedMatches);
+  } else if (q) {
+    filtered=filtered.filter(item=>item.filename.toLowerCase().includes(q));
+  }
+  if (seq!==galleryLoadSeq) return;
   const scroll=document.getElementById('gallery-scroll');
   scroll.innerHTML='';
+  showSearchStatus(q && found);
 
   if (!filtered.length) {
     const e=document.createElement('div');
-    e.className='gallery-empty'; e.textContent='No captures yet';
+    e.className='gallery-empty'; e.textContent=q ? tr('No captures match “{query}”', { query: q }) : tr('No captures yet');
     scroll.appendChild(e); return;
   }
 
@@ -4783,13 +5449,15 @@ async function loadGallery() {
     div.className='gallery-item'+(item.filePath===currentPath?' current':'')+(pinned?' pinned':'');
     div.dataset.fp=item.filePath;
     div.draggable=true;
+    div.tabIndex=0;   // Enter opens it (see the keyboard handler for .gallery-item)
+    div.setAttribute('aria-label',`${item.filename}${pinned?', pinned':''}${item.snippet?`: ${item.snippet}`:''}`);
 
     const img=document.createElement('div');
     img.className='gallery-thumb';
     img.title='Drag card to move. Drag ⇲ to export.';
     if (item.thumb) {
       const pic=document.createElement('img');
-      pic.src=item.thumb; pic.draggable=false;
+      pic.src=item.thumb; pic.draggable=false; pic.alt='';
       img.appendChild(pic);
     } else {
       // e.g. .webm recordings, which the OS can't thumbnail
@@ -4812,6 +5480,12 @@ async function loadGallery() {
     const lbl=document.createElement('div');
     lbl.className='gallery-item-name';
     lbl.textContent=item.filename.replace(/^screenshot-/,'').replace(/\.png$/,'');
+    if (q && item.snippet) {
+      const snip=document.createElement('div');
+      snip.className='gallery-item-snippet';
+      snip.textContent=item.snippet;
+      lbl.appendChild(snip);
+    }
 
     const actions=document.createElement('div');
     actions.className='gallery-actions';
@@ -4824,7 +5498,7 @@ async function loadGallery() {
     ].forEach(([txt,title,fn,cls])=>{
       const b=document.createElement('button');
       b.className='gallery-action '+cls;
-      b.type='button'; b.textContent=txt; b.title=title;
+      b.type='button'; b.textContent=txt; b.title=title; b.setAttribute('aria-label',title);
     if (cls==='export') {
       b.draggable=true;
         b.addEventListener('mouseenter',()=>warmGalleryComposite(item).catch(()=>{}));
@@ -4920,6 +5594,9 @@ async function loadGallery() {
 // ── Load image ────────────────────────────────────────────────────────────────
 function loadImageWithAnns(url,filePath,annotations,canvasSize) {
   const img=new Image();
+  // Settles once the document is set up (not merely when the image loads), so callers can add to it.
+  let markLoaded;
+  const loaded=new Promise(resolve=>{ markLoaded=resolve; });
   img.onload=()=>{
     bgImage=img;
     originalDataURL=url;
@@ -4928,9 +5605,11 @@ function loadImageWithAnns(url,filePath,annotations,canvasSize) {
     fitZoom();
     anns=Array.isArray(annotations)?annotations:[];
     selectedIdx=-1; undoStack=[]; redoStack=[]; render(); updateCanvasView(); updateInspector();
+    markLoaded();
   };
   img.src=url;
   if (filePath!==undefined) currentPath=filePath;
+  return loaded;
 }
 
 function flashAutoSaved() {
@@ -4967,7 +5646,7 @@ if (window.electronAPI) {
     // A new capture replaces the document: close the video editor / player first.
     exitMediaEdit();
     closeMediaViewer();
-    loadImageWithAnns(imageDataURL,savedFilePath,[]);
+    loadImageWithAnns(imageDataURL,savedFilePath,[]).then(applyBrandDefaults);
     flashAutoSaved();
     // With a linked project open, the capture joins it (and its folder).
     const linkedProject=activeProject()!=='all' && linkedFolders[activeProject()] ? activeProject() : null;
@@ -5031,6 +5710,7 @@ function applyAppSettings(settings) {
   }
   if (e.stroke && e.stroke !== sw) updateStrokeUI(e.stroke);
   if (settings.appearance?.thumbSize) document.body.dataset.thumbs = settings.appearance.thumbSize;
+  if (settings.brand) renderSwatches(settings.brand);
 }
 
 async function loadAppSettings() {
@@ -5071,6 +5751,8 @@ loadAppSettings();
 loadRuntimeBadge();
 loadGallery();
 </script>
+<script src="settings-sharing.js"></script>
 <script src="settings-panel.js"></script>
+<script src="guide-dialog.js"></script>
 </body>
 </html>

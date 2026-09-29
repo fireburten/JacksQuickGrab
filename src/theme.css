@@ -115,3 +115,14 @@
   --warn-text-rgb: 98,42,10;
   --danger-text-rgb: 153,27,27;
 }
+
+/* Keyboard focus is always visible (several controls reset the browser's own outline). */
+:focus-visible { outline: 2px solid var(--accent) !important; outline-offset: 2px !important; }
+
+/* People who ask their Mac for less motion get no animations or slides. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important;
+  }
+}
